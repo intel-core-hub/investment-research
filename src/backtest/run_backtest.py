@@ -159,21 +159,33 @@ def regime_returns(equities: pd.DataFrame, benchmark: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def run_info(config: dict, prices: pd.DataFrame, start) -> dict:
+def git_state() -> dict:
+    """Commit checked out and whether tracked or untracked files differ from it (reports/ excluded).
+
+    Call before writing any report, so this run's own outputs do not count as changes.
+    """
+    def git(*args) -> str:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+
+    try:
+        return {
+            "git_commit": git("rev-parse", "HEAD").strip(),
+            "git_dirty": bool(git("status", "--porcelain", "--", ".", ":(exclude)reports").strip()),
+        }
+    except (OSError, subprocess.CalledProcessError):
+        return {"git_commit": None, "git_dirty": None}
+
+
+def run_info(config: dict, prices: pd.DataFrame, start, git: dict) -> dict:
     def sha256(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    try:
-        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
-                                text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        commit = None
     return {
-        "prices_file": str(PRICES_PATH.relative_to(ROOT)),
+        "prices_file": PRICES_PATH.relative_to(ROOT).as_posix(),
         "prices_sha256": sha256(PRICES_PATH),
-        "config_file": str(CONFIG_PATH.relative_to(ROOT)),
+        "config_file": CONFIG_PATH.relative_to(ROOT).as_posix(),
         "config_sha256": sha256(CONFIG_PATH),
-        "git_commit": commit,
+        **git,
         "data_start": str(prices.index[0].date()),
         "trading_start": str(start.date()),
         "end": str(prices.index[-1].date()),
@@ -304,6 +316,7 @@ def plot_costs(summary: pd.DataFrame, names: list) -> None:
 
 
 def main() -> None:
+    git = git_state()
     config = load_config()
     prices = pd.read_csv(PRICES_PATH, index_col=0, parse_dates=True)
     strategies = build_all(config, prices.columns)
@@ -338,7 +351,8 @@ def main() -> None:
     yearly.round(6).to_csv(OUT_DIR / "yearly_returns.csv")
     regimes.round(6).to_csv(OUT_DIR / "regime_returns.csv", index=False)
     (OUT_DIR / "run_info.json").write_text(
-        json.dumps(run_info(config, prices, start), indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+        json.dumps(run_info(config, prices, start, git), indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8")
 
     plot_equity(equities, colors, config["initial_cash"])
     plot_drawdowns(equities, colors)
