@@ -1,0 +1,43 @@
+# Phase 7 machine learning settings.
+# Costs, initial cash and the Phase 5 engine come from config/backtest.toml;
+# bootstrap settings come from config/statistics.toml.
+
+seed = 42
+
+[target]
+asset = "VOO"          # predict this asset's direction and trade it
+risk_free = "BIL"      # held when the signal says "not up"; also the risk-free rate
+horizon_days = 20      # y_t = 1 if the return from t to t + 20 trading days is > 0
+
+[features]
+relative_to = ["VT", "EWJ", "BND", "BIL"]   # 60-day return of the target minus each of these
+select_k = 0           # 0 = use every feature of the set; k > 0 = SelectKBest fitted on training rows only
+
+[splits]
+# rows start on the first date on which every feature is available
+train_end = "2019-12-31"
+validation_end = "2022-12-31"   # test = every later date; used once, never for choices
+
+[trading]
+threshold = 0.5        # invest in the target when the predicted probability is above this (fixed, not tuned)
+frequency = "monthly"  # decide on the first trading day of each month, fill on the next day
+
+[walk_forward]
+first_test_year = 2016 # expanding window: train on everything before year Y, test on year Y
+
+[stability]
+seeds = [0, 1, 2, 3, 4]   # refit seed-dependent models with these seeds (validation only)
+
+# Hyperparameter grids searched on the validation period (selected by ROC-AUC).
+# `default` is used where no tuning is allowed (walk-forward, seed stability).
+[models.logistic_regression]
+grid = { C = [0.01, 0.1, 1.0] }
+default = { C = 0.1 }
+
+[models.random_forest]
+grid = { n_estimators = [300], max_depth = [3, 6], min_samples_leaf = [20, 100] }
+default = { n_estimators = 300, max_depth = 3, min_samples_leaf = 100 }
+
+[models.hist_gradient_boosting]
+grid = { learning_rate = [0.05], max_depth = [2, 3], max_iter = [50, 200] }
+default = { learning_rate = 0.05, max_depth = 2, max_iter = 50 }

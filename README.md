@@ -23,6 +23,7 @@ python src/simulation/run_scenarios.py # Phase 3 開始時期・期間・暴落�
 python src/portfolio/run_portfolios.py # Phase 4 ポートフォリオ比較 → reports/portfolio/
 python src/backtest/run_backtest.py   # Phase 5 戦略のバックテスト → reports/backtest/
 python src/statistics/run_statistics.py # Phase 6 統計的評価 → reports/statistics/
+python src/ml/run_ml.py               # Phase 7 機械学習の検証 → reports/ml/(数分かかる)
 python -m pytest                      # テスト
 ```
 
@@ -36,7 +37,8 @@ config/
 ├─ simulation.toml           積立額・比較する投資期間・暴落の判定基準
 ├─ portfolios.toml           ポートフォリオの配分・リバランス頻度・金額・無リスク資産
 ├─ backtest.toml             バックテストの戦略・手数料・スリッページ・ベンチマーク
-└─ statistics.toml           統計評価のローリング窓・VaR 信頼水準・ブートストラップ・市場局面の定義
+├─ statistics.toml           統計評価のローリング窓・VaR 信頼水準・ブートストラップ・市場局面の定義
+└─ ml.toml                   機械学習の予測対象・特徴量・期間の区切り・モデルとハイパーパラメータ・seed
 src/
 ├─ data/
 │  ├─ prices.py              取得仕様・設定読み込み・CSV 入出力(共通部品)
@@ -61,12 +63,18 @@ src/
 │  ├─ engine.py              日次バックテストエンジン(ポジション・現金・約定・コスト)
 │  ├─ provenance.py          入力のハッシュ値と git の状態の記録(Phase 5・6 で共通)
 │  └─ run_backtest.py        全戦略の実行、ベンチマーク比較、CSV・グラフ・再現情報の出力
-└─ statistics/
-   ├─ performance.py         基本指標・リスク調整指標・分布・VaR/CVaR・ローリング・ベンチマーク差・相関
-   ├─ regimes.py             市場局面の定義と局面別の成績
-   ├─ inference.py           信頼区間・Sharpe の標準誤差・ブートストラップ・多重検定の補正
-   ├─ trades.py              売買単位(往復)の損益集計
-   └─ run_statistics.py      全戦略の統計評価、CSV・グラフ・再現情報の出力
+├─ statistics/
+│  ├─ performance.py         基本指標・リスク調整指標・分布・VaR/CVaR・ローリング・ベンチマーク差・相関
+│  ├─ regimes.py             市場局面の定義と局面別の成績
+│  ├─ inference.py           信頼区間・Sharpe の標準誤差・ブートストラップ・多重検定の補正
+│  ├─ trades.py              売買単位(往復)の損益集計
+│  └─ run_statistics.py      全戦略の統計評価、CSV・グラフ・再現情報の出力
+└─ ml/
+   ├─ features.py            特徴量・予測対象(ラベル)・ラベル確定日・期間の区切り
+   ├─ models.py              モデルのパイプライン(標準化→選択→分類器)とベースライン
+   ├─ evaluation.py          予測性能の指標とキャリブレーション
+   ├─ signals.py             予測を Phase 5 の戦略(月初判断・翌日約定)に変換
+   └─ run_ml.py              探索・学習・予測・バックテスト・統計検証・walk-forward・実験記録
 tests/                       自動テスト(pytest)
 data/
 ├─ raw/<ticker>.csv          資産ごとの取得データ
@@ -77,6 +85,7 @@ reports/
 ├─ portfolio/                Phase 4 のポートフォリオ比較結果(CSV とグラフ)
 ├─ backtest/                 Phase 5 のバックテスト結果(CSV・グラフ・run_info.json)
 ├─ statistics/               Phase 6 の統計評価(CSV・グラフ・run_info.json)
+├─ ml/                       Phase 7 の実験記録・予測・指標・特徴量の重要度・グラフ
 ├─ figures/                  Phase 1 の VOO グラフ
 ├─ voo_yearly_returns.csv
 └─ voo_monthly_returns.csv
@@ -137,6 +146,178 @@ reports/
 | Sharpe ratio | 超過リターン(日次リターン − BIL の日次リターン)の平均 × 252 ÷ (その標準偏差 × √252) |
 
 N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
+
+---
+
+## Phase 7:機械学習
+
+目的は「ML モデルを作ること」ではなく、**ML を使うことで何が変わったのかを、リークなし・再現可能・ベースライン比較付きで検証できること**。Phase 5 のエンジンと Phase 6 の指標・統計検証をそのまま使い、Phase 1〜6 のコードと出力は変えていない。
+
+### チェックリストとの対応
+
+| 項目 | 実装 |
+|---|---|
+| A 研究環境 | `src/ml/`、`config/ml.toml`、scikit-learn を追加、seed を設定で指定、`run_info.json` にバージョンを記録 |
+| B 予測対象 | VOO の 20 営業日後リターンが正かどうか(上下方向)。予測期間は設定で固定 |
+| C 特徴量 | base 10 個、extended 19 個(Phase 6 の指標・市場局面・他資産との相対リターンを追加) |
+| D リーク防止 | 下の「リーク防止」。テストで確認 |
+| E 時系列分割 | train / validation / test の時間順分割(日付は設定で固定)、各区間の件数を `metrics/splits.csv` に記録、walk-forward |
+| F ベースライン | 常に上昇(= Buy & Hold)、学習期間の上昇率、モメンタム、200 日移動平均、ランダム |
+| G モデル | ロジスティック回帰、ランダムフォレスト、HistGradientBoosting |
+| H 予測性能 | Accuracy・Precision・Recall・F1・ROC-AUC・Brier・log loss・混同行列・キャリブレーション |
+| I 予測と投資成果の分離 | 予測 → 月初の売買判断 → Phase 5 のエンジン(翌日約定・手数料・スリッページ)→ Phase 6 の指標 |
+| J Out-of-sample | テスト期間は最後に1回だけ予測。予測は `predictions/` に保存し、in-sample・validation・test を列 `segment` で区別 |
+| K Walk-forward | 2016〜2026 年の各年を、その前年末までのデータで学習したモデルで予測。年ごとの性能と、つなげた結果を分析 |
+| L 特徴量の重要度 | 検証期間での permutation importance、ロジスティック回帰の係数、ランダムフォレストの impurity importance |
+| M 過学習 | 学習・検証・テストの差、モデルの大きさ、特徴量数、候補数、walk-forward の安定性、seed・特徴量セット・モデルを変えた結果 |
+| N 統計的検証 | Phase 6 のブートストラップ(1日単位・21日ブロック)、Sharpe の標準誤差、Buy & Hold との差、Holm 補正 |
+| O 実験管理 | `experiments.csv`(ID・モデル・特徴量・期間・ハイパーパラメータ・seed・指標・commit・データと設定のハッシュ) |
+| P テスト | `tests/test_ml.py`(19 件)。テスト全体は 135 件 |
+| Q 再現性 | 2回の実行で CSV 28 本が1バイトも変わらないことを確認。GitHub Actions で全テストを実行 |
+
+### 予測対象と特徴量
+
+- **予測対象:** yₜ = 1(VOO の t から t + 20 営業日のリターン > 0)、それ以外は 0。t + 20 日の終値が確定するまでラベルは分からない(その日を「ラベル確定日」として記録する)。
+- **base(10 個):** 過去 1・5・20・60・120・252 日のリターン、20・60 日のボラティリティ(年率)、200 日移動平均からの乖離、出来高の変化(直近 20 日平均 ÷ 120 日平均 − 1)。
+- **extended(19 個):** base に加えて次の9個。
+  - 最高値からの下落率
+  - 252 日の rolling Sharpe
+  - 市場局面のフラグ(強気・高ボラ・大幅下落、Phase 6 と同じ定義)
+  - VT・EWJ・BND・BIL に対する 60 日の相対リターン
+- すべて日付 t の終値までのデータだけで計算する。必要な過去データがそろわない期間(最初の約1年)は使わない。欠損の補完はしない。
+
+### 期間の区切り
+
+| 区間 | 期間 | 評価に使う行 | 上昇の割合 | モデルの学習に使うデータ |
+|---|---|---|---|---|
+| train | 2011-09-08 〜 2019-12-31 | 2,072 | 69.6% | train(2,072 行) |
+| validation | 2020-01-02 〜 2022-12-30 | 736 | 64.8% | train(2,072 行) |
+| test | 2023-01-03 〜 2026-09-21 | 912 | 71.5% | train + validation(2,828 行) |
+
+各区間の最後の 20 行は、ラベルが次の区間の価格で決まるため、学習にも評価にも使わない。テストの最後の 20 行はラベルがまだないため、予測と売買には使うが、予測性能の評価には入らない。
+
+### リーク防止
+
+| 対策 | 方法 |
+|---|---|
+| 未来のデータを特徴量に使わない | 特徴量は過去方向の窓だけで計算。途中でデータを切っても、未来の値を変えても、それまでの特徴量が変わらないことをテストで確認 |
+| ラベルの重なり(境界) | 区切りの日までにラベルが確定した行だけを学習に使う(最後の 20 行を除く) |
+| 標準化・特徴量選択 | Pipeline の中に入れ、学習する行だけで fit。検証・テストの値を変えても学習結果が変わらないことをテストで確認 |
+| ハイパーパラメータ | 検証期間の ROC-AUC で選ぶ。テスト期間は使わない |
+| テスト期間 | 学習+検証で fit したモデルで1回だけ予測。再学習・しきい値の調整・特徴量選択・モデルの改善に使わない |
+| 売買の判断 | しきい値 0.5 に固定。予測確率 > 0.5 なら VOO、そうでなければ BIL。月初に判断して翌営業日に約定(Phase 5 と同じ) |
+| walk-forward | 探索で選んだ値ではなく、設定の `default` のハイパーパラメータを使う(検証期間の情報を過去の年に持ち込まないため) |
+| 予測のない日 | 売買の判断日に予測がなければエラー。テスト期間の予測だけで、テスト期間の売買が行われることをテストで確認 |
+| 勾配ブースティングの早期終了 | 使わない(学習データから無作為に検証用を抜くため、時間の順序が崩れる) |
+
+### モデルとベースライン
+
+| 名前 | 内容 | 探索したハイパーパラメータ |
+|---|---|---|
+| logistic_regression | 標準化 → ロジスティック回帰 | C = 0.01, 0.1, 1 |
+| random_forest | 標準化 → ランダムフォレスト(300 本) | max_depth = 3, 6 × min_samples_leaf = 20, 100 |
+| hist_gradient_boosting | 標準化 → HistGradientBoosting(学習率 0.05) | max_depth = 2, 3 × max_iter = 50, 200 |
+| baseline:always_up | 常に上昇と予測(= Buy & Hold) | − |
+| baseline:historical_mean | 学習期間の上昇の割合を確率とする | − |
+| baseline:momentum_252d | 過去 252 日のリターンが正なら上昇 | − |
+| baseline:moving_average_200d | 終値が 200 日移動平均より上なら上昇 | − |
+| baseline:random | 無作為(学習期間の上昇の割合で上昇と予測) | − |
+
+3 モデル × 2 特徴量セットの 6 通りで、ハイパーパラメータの候補は合計 22 個。
+
+### 結果:予測性能(ROC-AUC)
+
+| | train | validation | test | walk-forward 平均 ± 標準偏差 | 0.5 を超えた年 | seed を変えた時の標準偏差(validation) |
+|---|---|---|---|---|---|---|
+| logistic_regression / base | 0.621 | 0.434 | 0.518 | 0.555 ± 0.109 | 73% | −(seed に依存しない) |
+| logistic_regression / extended | 0.674 | 0.487 | 0.520 | 0.605 ± 0.154 | 64% | − |
+| random_forest / base | 0.774 | 0.460 | 0.545 | 0.585 ± 0.108 | 73% | 0.002 |
+| random_forest / extended | 0.929 | 0.467 | 0.545 | 0.586 ± 0.145 | 73% | 0.005 |
+| hist_gradient_boosting / base | 0.792 | 0.442 | 0.543 | 0.543 ± 0.125 | 55% | 0.000 |
+| hist_gradient_boosting / extended | 0.819 | 0.465 | 0.526 | 0.545 ± 0.154 | 45% | 0.000 |
+
+walk-forward でのベースラインの ROC-AUC:モメンタム 0.444、移動平均 0.460、ランダム 0.498。
+
+### 結果:投資成果(コストあり、Buy & Hold = 常に上昇)
+
+テスト期間(2023-01-03 〜 2026-09-21、1回だけ評価):
+
+| | CAGR | Sharpe | 最大DD | VOO を持った判断の割合 | 正解率 | Buy & Hold との Sharpe の差 | 差の 95% 区間 | p 値(Holm 補正後) |
+|---|---|---|---|---|---|---|---|---|
+| Buy & Hold(always_up) | 22.38% | 1.16 | −18.7% | 100% | 71.5% | − | − | − |
+| logistic_regression / extended | 23.00% | 1.21 | −18.7% | 96% | 70.9% | +0.05 | −0.06 〜 0.22 | 1.000 |
+| random_forest / extended | 21.90% | 1.16 | −18.7% | 91% | 72.7% | +0.01 | −0.20 〜 0.20 | 1.000 |
+| hist_gradient_boosting / extended | 21.37% | 1.12 | −18.7% | 93% | 71.3% | −0.03 | −0.22 〜 0.11 | 1.000 |
+| momentum_252d | 19.22% | 1.03 | −18.7% | 89% | 68.3% | −0.13 | −0.44 〜 0.18 | 1.000 |
+| moving_average_200d | 15.21% | 0.87 | −10.0% | 91% | 67.3% | −0.29 | −0.93 〜 0.29 | 1.000 |
+| random | 7.68% | 0.30 | −18.7% | 58% | 55.6% | −0.85 | −1.50 〜 −0.31 | 0.020 |
+
+walk-forward(2016-01-04 〜 2026-09-21、各年を前年末までのデータで学習):
+
+| | CAGR | Sharpe | VOO を持った判断の割合 | 売買回数 | Buy & Hold との Sharpe の差 | p 値(Holm 補正後) |
+|---|---|---|---|---|---|---|
+| Buy & Hold(always_up) | 15.30% | 0.77 | 100% | 1 | − | − |
+| logistic_regression / base | 12.53% | 0.64 | 93% | 25 | −0.13 | 0.027 |
+| logistic_regression / extended | 14.26% | 0.75 | 84% | 39 | −0.02 | 1.000 |
+| random_forest / extended | 15.00% | 0.77 | 94% | 13 | −0.00 | 1.000 |
+| hist_gradient_boosting / extended | 13.64% | 0.71 | 88% | 33 | −0.06 | 1.000 |
+| momentum_252d | 11.20% | 0.62 | 85% | 15 | −0.16 | 1.000 |
+| moving_average_200d | 8.13% | 0.46 | 84% | 39 | −0.32 | 0.656 |
+
+(差の区間と p 値は 21 日ブロックのブートストラップ。全予測の比較をまとめて Holm 補正。全行は `metrics/investment_metrics.csv` と `metrics/statistical_tests.csv`。)
+
+![ROC-AUC by segment](reports/ml/figures/roc_auc_by_segment.png)
+![Walk-forward equity](reports/ml/figures/equity_walk_forward.png)
+![Permutation importance](reports/ml/figures/permutation_importance_extended.png)
+
+### 分かったこと
+
+**ML を使っても、投資成果が Buy & Hold より良くなったという証拠はない**
+- テスト期間では、どの ML 戦略も Buy & Hold との Sharpe の差を区別できなかった(Holm 補正後の p = 1.0)。
+- walk-forward では、Buy & Hold に並んだのが最もよくて random_forest / extended(差 −0.00)。logistic_regression / base は有意に下回った(p = 0.027)。
+
+**予測は「わずかに」当たっていたが、不安定で、投資成果には結びつかなかった**
+- walk-forward の ROC-AUC 平均は 0.54〜0.61 で、ルールのベースライン(モメンタム 0.44、移動平均 0.46)より高い。
+- ただし年ごとのばらつきが大きく(標準偏差 0.11〜0.15)、0.5 を上回ったのは 45〜73% の年だけ。検証期間(2020〜2022 年)では全モデルが 0.5 を下回った。
+- 20 営業日後に VOO が上がっていた日は約 70%。この条件では、正解率(テストで約 71%)は「常に上昇」と予測するだけで達成できるので、正解率は予測の良さを表さない。
+- 上昇が 7 割を占める資産では、BIL に退避した月の分だけ上昇を取り逃がす。わずかな予測力では、その損を取り戻せなかった。ML はテスト期間の判断の 91〜100% で VOO を持っており、実質的にはほぼ Buy & Hold だった。
+
+**過学習がはっきり見える**
+- 学習期間の ROC-AUC(0.62〜0.93)と、検証期間(0.43〜0.49)の差が大きい。最も複雑な random_forest / extended(ノード数 14,290)で差が最大(0.46)。
+- 特徴量を増やしても(extended)、一貫して良くはならなかった。
+
+**特徴量の重要度は「関係の変化」を示している**
+- 検証期間では、200 日移動平均からの乖離(`ma200_gap`)の permutation importance が3モデルともマイナスだった。この特徴量の値をばらばらに並べ替えたほうが、ROC-AUC が上がったということ。2011〜2019 年に学んだ関係が、2020〜2022 年には逆に働いていた。
+- 重要度は「モデルがその特徴量を使っていた」ことを示すだけで、それが上昇・下落の「原因」だったことは示さない。
+
+**seed を変えても結果はほぼ変わらない**
+- ランダムフォレストの検証期間の ROC-AUC の標準偏差は 0.005 以下。HistGradientBoosting は早期終了なしのため、seed によらず同じ結果になる。結果の違いは乱数ではなく、期間とデータによる。
+
+### 限界と注意
+
+- **実質的なサンプル数は少ない:** 日次のサンプルが 2,072 行あっても、20 日先のラベルは隣の日と大きく重なるので、独立な情報は約 100 件分(2,072 ÷ 20)しかない。ROC-AUC の数ポイントの差は、偶然でも十分に起こる。
+- **1つの資産・1つの予測対象・1つの期間:** 他の資産、他の予測期間、他の時代で同じ結論になるとは限らない。
+- **多重検定:** 22 個のハイパーパラメータの候補、6 通りのモデルと特徴量セット、5 つのベースラインを比べている。統計検証では Holm 補正をかけたが、候補の選び方そのものも研究者の判断による。
+- **テスト期間はもう使った:** この結果を見てモデルを改良した場合、その改良は 2023〜2026 年のデータでは公平に評価できない。次の改良は、2026 年 9 月以降の新しいデータで確かめる。
+- **コスト・税:** 手数料とスリッページは Phase 5 と同じ(それぞれ 0.05%)。税金と為替は含まない。
+
+### 出力 `reports/ml/`
+
+| ファイル | 内容 |
+|---|---|
+| `experiments.csv` | 実験ごとに1行。`experiment_id`、モデル、特徴量セットと特徴量、予測対象、予測期間、各区間の期間と件数、ハイパーパラメータ、seed、しきい値、主要な指標、`git_commit`、`git_dirty`、データと設定のハッシュ |
+| `predictions/*.csv` | 予測ごとに全日付の `segment`(train / validation / test)、`y_true`、`label_end`、`score`、`invest` |
+| `metrics/splits.csv` | 区間ごとの期間・行数・評価に使う行数・上昇の割合・学習に使った行数 |
+| `metrics/hyperparameter_search.csv` | 全候補の検証期間の成績と、選ばれたかどうか |
+| `metrics/prediction_metrics.csv` / `calibration.csv` | 予測 × 区間の予測性能(混同行列を含む) / キャリブレーション |
+| `metrics/investment_metrics.csv` | 予測 × 区間(train / validation / test / walk_forward)のバックテスト成績と Buy & Hold との差 |
+| `metrics/statistical_tests.csv` | Sharpe の標準誤差、ブートストラップの信頼区間、Buy & Hold との差の p 値と Holm 補正 |
+| `metrics/walk_forward_prediction_metrics.csv` / `walk_forward_yearly_returns.csv` | walk-forward の年ごとの予測性能 / 年ごとのリターン |
+| `metrics/overfitting.csv` / `seed_stability.csv` | 区間ごとの差・モデルの大きさ・walk-forward の安定性 / seed を変えた結果 |
+| `metrics/equity_*.csv` | 区間ごとの毎日の資産 |
+| `feature_importance/` | 検証期間の permutation importance、係数と impurity importance |
+| `figures/` | 期間の区切り、区間ごとの ROC-AUC、walk-forward の ROC-AUC、キャリブレーション、特徴量の重要度、テストと walk-forward の資産推移、Sharpe の差の信頼区間 |
+| `run_info.json` | データ(価格・VOO の出来高)と設定3つのハッシュ、commit、`git_dirty`、Python・pandas・numpy・scikit-learn・scipy のバージョン、seed |
 
 ---
 
