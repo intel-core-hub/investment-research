@@ -18,6 +18,7 @@ python src/data/quality_check.py      # 全資産の品質チェック → repor
 python src/data/build_dataset.py      # 共通期間のデータセット作成 → data/processed/prices.csv
 python src/analysis/compare_assets.py # 資産比較 → reports/comparison/
 python src/analysis/analyze_voo.py    # VOO 単体レポート(Phase 1) → reports/
+python src/simulation/run_dca.py     # Phase 3 積立シミュレーション → reports/simulation/
 ```
 
 VOO だけ取り直すときは `python src/data/fetch_voo.py`。
@@ -102,6 +103,31 @@ reports/
 | 年次・月次リターン | 各期末の終値 ÷ 前期末の終値 − 1。最初の期は初日の終値から |
 
 N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
+
+---
+
+## Phase 3:積立投資シミュレーション
+
+Phase 2で整備した共通価格データを使い、毎月10,000の固定額を各月最初の取引日に投資するDCAを実装した。
+
+- 小数単位の購入を許可
+- 同じ総投資額を初日に一括投資するベースラインも計算
+- 累積拠出額、評価額、損益を記録
+- 資産ごとの結果をCSVに出力
+- USD建て価格を使うため、10,000は正規化した拠出額として扱う
+
+実行:
+
+```
+python src/simulation/run_dca.py
+```
+
+出力:
+
+- `reports/simulation/dca_summary.csv`
+- `reports/simulation/dca_paths.csv`
+
+為替、手数料、税、実際の約定条件はPhase 9で扱う。
 
 ---
 
