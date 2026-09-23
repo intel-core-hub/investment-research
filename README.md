@@ -130,7 +130,7 @@ N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
 
 ---
 
-## Phase 5:バックテスト基盤
+## Phase 5:バックテスト基盤（完了）
 
 ### 完了条件との対応
 
@@ -146,8 +146,8 @@ N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
 | Equity | `BacktestResult.equity`:毎日の終値で評価した資産(現金 + 保有数量 × 終値) |
 | Benchmark | `benchmark` で指定した戦略(初期値 Buy & Hold VOO)と、同じ期間・同じコストで比較 |
 | Look-ahead | 戦略には判断日までの価格しか渡さない。売買は翌営業日。テストで3通りに確認 |
-| Reproducibility | 戦略は状態を持たず、乱数も使わない。入力のハッシュ値とバージョンを `run_info.json` に記録 |
-| Tests | `tests/test_backtest.py`(25 件)。テスト全体は 81 件 |
+| Reproducibility | 戦略は状態を持たず、乱数も使わない。入力のハッシュ値・commit・未コミット変更の有無・バージョンを `run_info.json` に記録 |
+| Tests | `tests/test_backtest.py`(26 件)。テスト全体は 82 件で、GitHub Actions で push のたびに実行 |
 | Reports | `reports/backtest/` の CSV 6本・グラフ5枚・`run_info.json` |
 
 ### 1日の流れ(エンジンの仮定)
@@ -204,7 +204,20 @@ N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
 | `transactions.csv` / `signals.csv` | 全売買と、全ての判断(目標配分) |
 | `yearly_returns.csv` | 年別リターン(期間別の検証) |
 | `regime_returns.csv` | ベンチマークの暴落(15% 以上)の下落期・回復期と、ベンチマークが上がった月・下がった月の平均(市場環境別の検証) |
-| `run_info.json` | 入力データと設定のハッシュ値、git の commit、期間、Python とライブラリのバージョン、使った設定 |
+| `run_info.json` | 入力データと設定のハッシュ値、git の commit と未コミット変更の有無(`git_dirty`)、期間、Python とライブラリのバージョン、使った設定 |
+
+### 結果の再現と確認
+
+`run_info.json` を使うと、レポートがどのコード・データから作られたかを確認できる。
+
+- `git_dirty` が `false` なら、`git_commit` の状態のコードで作られた(`reports/` 以外に未コミットの変更がなかった)。
+- `prices_sha256` と `config_sha256` は、改行コードを LF にそろえてから計算した SHA-256。git に保存された内容と同じ値になるため、OS に関係なく次のように確かめられる。
+
+```
+git show <git_commit>:data/processed/prices.csv | sha256sum
+```
+
+- 同じ commit で `python src/backtest/run_backtest.py` を実行すると、同じ CSV が作られる(2026-09-23 に再生成して、数値の CSV 6本が1バイトも変わらないことを確認済み)。
 | `figures/` | 資産の推移、ドローダウン、保有配分、年別リターン、コストの影響 |
 
 ### 結果(2011-09-08 〜 2026-09-21、コストあり)
