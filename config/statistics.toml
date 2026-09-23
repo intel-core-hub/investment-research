@@ -1,0 +1,19 @@
+# Phase 6 statistics settings.
+# Strategies, costs, benchmark and start date come from config/backtest.toml.
+
+rolling_windows = [63, 252]     # trading days; 252 (about one year) is the base window
+var_confidences = [0.95, 0.99]
+confidence_level = 0.95         # for every confidence interval
+
+[bootstrap]
+resamples = 2000
+seed = 20260923
+block_size = 21                 # trading days per block (about one month)
+
+[regimes]
+reference = "VOO"               # asset whose prices define the market regime
+trend_window = 200              # bull / bear: close vs this moving average
+volatility_window = 63          # trailing window for realized volatility
+high_volatility = 0.20          # annualized volatility at or above -> high volatility
+low_volatility = 0.12           # annualized volatility at or below -> low volatility
+large_drawdown = 0.15           # at least this far below the all-time high -> large drawdown

@@ -22,6 +22,7 @@ python src/simulation/run_dca.py      # Phase 3 全期間の積立シミュレ�
 python src/simulation/run_scenarios.py # Phase 3 開始時期・期間・暴落別の比較 → reports/simulation/
 python src/portfolio/run_portfolios.py # Phase 4 ポートフォリオ比較 → reports/portfolio/
 python src/backtest/run_backtest.py   # Phase 5 戦略のバックテスト → reports/backtest/
+python src/statistics/run_statistics.py # Phase 6 統計的評価 → reports/statistics/
 python -m pytest                      # テスト
 ```
 
@@ -34,7 +35,8 @@ config/
 ├─ assets.toml               比較する資産とローリング期間の設定
 ├─ simulation.toml           積立額・比較する投資期間・暴落の判定基準
 ├─ portfolios.toml           ポートフォリオの配分・リバランス頻度・金額・無リスク資産
-└─ backtest.toml             バックテストの戦略・手数料・スリッページ・ベンチマーク
+├─ backtest.toml             バックテストの戦略・手数料・スリッページ・ベンチマーク
+└─ statistics.toml           統計評価のローリング窓・VaR 信頼水準・ブートストラップ・市場局面の定義
 src/
 ├─ data/
 │  ├─ prices.py              取得仕様・設定読み込み・CSV 入出力(共通部品)
@@ -54,10 +56,17 @@ src/
 ├─ portfolio/
 │  ├─ portfolio.py           設定の検証、Buy & Hold・リバランス・積立のエンジン、指標
 │  └─ run_portfolios.py      全ポートフォリオの比較とグラフ出力
-└─ backtest/
-   ├─ strategies.py          戦略の共通インターフェースと戦略(売買ルール)
-   ├─ engine.py              日次バックテストエンジン(ポジション・現金・約定・コスト)
-   └─ run_backtest.py        全戦略の実行、ベンチマーク比較、CSV・グラフ・再現情報の出力
+├─ backtest/
+│  ├─ strategies.py          戦略の共通インターフェースと戦略(売買ルール)
+│  ├─ engine.py              日次バックテストエンジン(ポジション・現金・約定・コスト)
+│  ├─ provenance.py          入力のハッシュ値と git の状態の記録(Phase 5・6 で共通)
+│  └─ run_backtest.py        全戦略の実行、ベンチマーク比較、CSV・グラフ・再現情報の出力
+└─ statistics/
+   ├─ performance.py         基本指標・リスク調整指標・分布・VaR/CVaR・ローリング・ベンチマーク差・相関
+   ├─ regimes.py             市場局面の定義と局面別の成績
+   ├─ inference.py           信頼区間・Sharpe の標準誤差・ブートストラップ・多重検定の補正
+   ├─ trades.py              売買単位(往復)の損益集計
+   └─ run_statistics.py      全戦略の統計評価、CSV・グラフ・再現情報の出力
 tests/                       自動テスト(pytest)
 data/
 ├─ raw/<ticker>.csv          資産ごとの取得データ
@@ -67,6 +76,7 @@ reports/
 ├─ simulation/               Phase 3 の積立シミュレーション結果(CSV とグラフ)
 ├─ portfolio/                Phase 4 のポートフォリオ比較結果(CSV とグラフ)
 ├─ backtest/                 Phase 5 のバックテスト結果(CSV・グラフ・run_info.json)
+├─ statistics/               Phase 6 の統計評価(CSV・グラフ・run_info.json)
 ├─ figures/                  Phase 1 の VOO グラフ
 ├─ voo_yearly_returns.csv
 └─ voo_monthly_returns.csv
@@ -127,6 +137,209 @@ reports/
 | Sharpe ratio | 超過リターン(日次リターン − BIL の日次リターン)の平均 × 252 ÷ (その標準偏差 × √252) |
 
 N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
+
+---
+
+## Phase 6:ポートフォリオ数学・統計
+
+Phase 5 の4戦略(コストあり、2011-09-08 〜 2026-09-21、日次リターン 3,779 件)を、同じ定義で統計的に評価する。入力はレポートの CSV ではなく、`config/backtest.toml` と価格データから Phase 5 のバックテストをそのまま実行し直した結果を使う(丸め誤差を持ち込まないため)。
+
+### チェックリストとの対応
+
+| 項目 | 実装 | 出力 |
+|---|---|---|
+| A 基本指標 | `performance.py`(累積リターン・CAGR・ボラティリティ・最大DD と日付・回復期間・最終資産) | `strategy_metrics.csv` |
+| B リスク調整 | Sharpe・Sortino・Calmar、境界ケースは NaN | `risk_metrics.csv` |
+| C リターン分布 | 平均・中央値・標準偏差・歪度・尖度・最小・最大・7つのパーセンタイル(日次・月次) | `return_distribution.csv`、`figures/return_distribution/` |
+| D VaR / CVaR | ヒストリカル法、95%・99%、日次・月次 | `var_cvar.csv` |
+| E ローリング | リターン・ボラティリティ・Sharpe・窓内の最大DD・ベンチマークとの差、窓 63 日と 252 日(基本) | `rolling_metrics.csv`、`figures/rolling/` |
+| F 売買・損益構造(発展) | 往復の売買ごとの損益、勝率・Profit Factor・連勝/連敗。適用できない戦略は理由を記録 | `trade_statistics.csv`、`trades.csv` |
+| G ベンチマーク比較 | Buy & Hold VOO との差を8指標で記録(優劣の判定はしない) | `benchmark_comparison.csv`、`figures/risk_return/benchmark_comparison.png` |
+| H 相関・共分散 | 戦略・VOO・BIL の日次・月次・下落日の相関、日次・年率の共分散 | `correlation.csv`、`figures/correlation/` |
+| I 市場局面 | 強気・弱気・高ボラ・低ボラ・大幅下落の5局面 | `regime_analysis.csv`、`regime_periods.csv`、`figures/regime/` |
+| J 統計的検証 | 平均の信頼区間(通常・Newey-West)、Sharpe の標準誤差、Probabilistic Sharpe Ratio、ブートストラップ(1日単位・21日ブロック)、Holm 補正 | `statistical_tests.csv`、`figures/statistical/` |
+| K 統計的問題 | このセクション後半の「バックテストの統計的な限界」 | README |
+| L テスト | `tests/test_statistics.py`(34 件)。テスト全体は 116 件 | |
+| M レポート | `reports/statistics/` | |
+| N 再現性・CI | `run_info.json`(データ・設定2つのハッシュ、commit、`git_dirty`、バージョン、seed) | |
+
+### 共通の約束事
+
+| 項目 | 内容 |
+|---|---|
+| リターン | 単純リターン。小数で表す(0.01 = 1%) |
+| 年率換算 | 平均は × 252、標準偏差は × √252。CAGR は暦日で年数を数える(日数 ÷ 365.25) |
+| 無リスク金利 | 同じ日の BIL の日次リターン。超過リターン = 戦略の日次リターン − BIL の日次リターン |
+| 列名 | すべて snake_case。年率換算した値は `_annualized` で終わる。付いていないリターン・リスクの値は、その行の頻度(daily / monthly)か全期間の値 |
+| 日数 | `recovery_days`・`underwater_days`・`median_recovery_days` は暦日。`trading_days`・`observations` は営業日(件数) |
+| 欠損値 | 資産額の欠損日は計算前に除き、前後の有効な日の間でリターンを計算する。CSV の空欄は「定義できない」(件数不足・ゼロ除算・未回復・適用外)を表す |
+| 損失の符号 | VaR・CVaR は損失を正の数で表す(0.02 = 2% の損失)。最大DD と差の列は符号付き(−0.34 = 34% の下落) |
+
+### 指標の定義
+
+| 指標 | 定義 | 定義できない場合(NaN) |
+|---|---|---|
+| 累積リターン | 最終資産 ÷ 初日の資産 − 1 | データが1件以下 |
+| CAGR | (最終資産 ÷ 初日の資産)^(1 ÷ 年数) − 1 | データが1件以下 |
+| 年率ボラティリティ | 日次リターンの標本標準偏差 × √252 | リターンが1件以下 |
+| 最大DD | 資産 ÷ それまでの最高値 − 1 の最小値。下落がなければ 0 | データなし |
+| 回復期間 | 底の日から、直前の高値を再び上回る日までの暦日数。`underwater_days` は高値から回復まで | 回復していない |
+| Sharpe | 超過リターンの平均 ÷ その標準偏差 × √252 | 標準偏差が 0(変動ゼロ) |
+| 下方偏差 | √(全日の min(超過リターン, 0)² の平均) × √252。目標は無リスク金利、分母は全日数 | データなし |
+| Sortino | 超過リターンの平均 × 252 ÷ 年率の下方偏差 | 下方偏差が 0(超過リターンが一度もマイナスにならない) |
+| Calmar | CAGR ÷ \|最大DD\|(全期間) | 最大DD が 0 |
+| 歪度・尖度 | pandas の標本歪度と超過尖度(正規分布で 0) | 歪度は3件未満、尖度は4件未満 |
+| パーセンタイル | 線形補間(numpy の既定) | データなし |
+| ヒストリカル VaR | −(1 − 信頼水準)分位点。例:95% VaR = −5% 分位点 | 件数が 1 ÷ (1 − 信頼水準) 未満(95% は 20 件、99% は 100 件) |
+| ヒストリカル CVaR | −(VaR の分位点以下のリターンの平均) | 同上 |
+| ローリング | 各日の値は、その日を含む直前 N 営業日だけで計算する。リターンは (E_t ÷ E_{t−N})^(252÷N) − 1 | 窓がそろう前の日は出力しない |
+| 月次リターン | 月末の資産で計算する。最初の月と、月の最終営業日まで届いていない最後の月は除く | |
+
+月次の VaR は、月次リターン(179 件)から同じ方法で計算している。
+
+### 市場局面の定義(`regimes.py`、しきい値は `config/statistics.toml`)
+
+VOO の価格で、各日の終値の時点で判定する(その日までの価格だけを使う)。
+
+| 局面 | 判定 |
+|---|---|
+| bull(強気) | 終値 > 200 日移動平均 |
+| bear(弱気) | 終値 ≤ 200 日移動平均 |
+| high_volatility | 直近 63 日の年率ボラティリティ ≥ 20% |
+| low_volatility | 同 ≤ 12% |
+| large_drawdown(大幅下落) | それまでの最高値から 15% 以上下 |
+
+- ある日の終値で決まった局面は、**翌日のリターン** に割り当てる(当日の終値を見てから当日のリターンを分類しないため)。
+- 局面は重なりうる(例:弱気かつ高ボラ)。移動平均やボラティリティの計算に必要な日数がそろわない日は、その局面に含めない。
+- 局面ごとに、日数・連続した期間の数・複利リターン・年率リターン・ボラティリティ・Sharpe・期間内の最大DD と、損失で終わった期間が元の水準に戻るまでの日数を出す。
+
+### 統計的検証の方法(`inference.py`)
+
+- **信頼区間:** すべて両側 95%。
+- **平均リターン:** 通常の方法と、日々のリターンの自己相関を考慮した Newey-West 法(ラグ = ⌊4(n/100)^(2/9)⌋ = 8)。どちらも正規分布の分位点を使う(n = 3,779 なので t 分布とほぼ同じ)。
+- **Sharpe の標準誤差:** Lo(2002)の i.i.d. 近似と、歪度・尖度を補正した Mertens(2002)の式。
+- **Probabilistic Sharpe Ratio:** 本当の Sharpe が 0 より大きい確率(Bailey & López de Prado 2012)。
+- **ブートストラップ:** 日を単位に、全戦略と BIL を同じ日の組で再標本化する(戦略どうしの差の比較が崩れないように)。1日単位(i.i.d.)と、連続する 21 日を1かたまりにする循環ブロック法の2通り。2,000 回、seed は `config/statistics.toml` で固定(20260923)。
+- **信頼区間の出し方:** 再標本化した値の 2.5% 点と 97.5% 点(パーセンタイル法)。
+- **p 値:** ベンチマークとの差について、2 × min(P(差 ≤ 0), P(差 ≥ 0))。各確率は (件数 + 1) ÷ (試行数 + 1) で見積もるため、0 にはならない。
+- **多重検定:** 同じ手法・同じ統計量で3戦略を比べる組ごとに、Holm 法で補正する(`p_value_holm`)。
+
+### 結果(2011-09-08 〜 2026-09-21、コストあり)
+
+基本指標とリスク調整指標:
+
+| | CAGR | ボラティリティ | 最大DD(底) | 回復日数 | Sharpe | Sortino | Calmar | 最終資産 |
+|---|---|---|---|---|---|---|---|---|
+| Buy & Hold VOO | 15.52% | 16.85% | −34.0%(2020-03-23) | 140 | 0.85 | 1.21 | 0.46 | 87,484 |
+| 60/40 annual rebalance | 10.17% | 10.31% | −21.2%(2020-03-23) | 119 | 0.85 | 1.19 | 0.48 | 42,907 |
+| VOO 200-day trend | 8.90% | 14.14% | −35.5%(2020-03-23) | 389 | 0.57 | 0.78 | 0.25 | 36,018 |
+| Momentum top 1 | 6.91% | 15.74% | −37.9%(2020-03-23) | 525 | 0.41 | 0.56 | 0.18 | 27,302 |
+
+日次リターンの分布と VaR / CVaR:
+
+| | 歪度 | 超過尖度 | 95% VaR | 95% CVaR | 99% VaR | 99% CVaR | 正規分布を仮定した 99% VaR |
+|---|---|---|---|---|---|---|---|
+| Buy & Hold VOO | −0.34 | 14.3 | 1.60% | 2.53% | 3.03% | 4.28% | 2.41% |
+| 60/40 annual rebalance | −0.49 | 16.2 | 0.98% | 1.53% | 1.79% | 2.62% | 1.47% |
+| VOO 200-day trend | −0.81 | 24.0 | 1.35% | 2.20% | 2.57% | 3.93% | 2.03% |
+| Momentum top 1 | −0.44 | 18.6 | 1.54% | 2.48% | 3.03% | 4.28% | 2.28% |
+
+統計的検証(21 日ブロックのブートストラップ、95% 信頼区間):
+
+| | Sharpe | Sharpe の信頼区間 | Buy & Hold との Sharpe の差 | 差の信頼区間 | p 値(Holm 補正後) | CAGR の差の p 値(Holm 補正後) |
+|---|---|---|---|---|---|---|
+| Buy & Hold VOO | 0.85 | 0.37 〜 1.37 | − | − | − | − |
+| 60/40 annual rebalance | 0.85 | 0.35 〜 1.38 | −0.01 | −0.09 〜 0.08 | 0.873 | 0.004 |
+| VOO 200-day trend | 0.57 | 0.10 〜 1.09 | −0.28 | −0.54 〜 −0.00 | 0.098 | 0.009 |
+| Momentum top 1 | 0.41 | −0.04 〜 0.91 | −0.44 | −0.75 〜 −0.15 | 0.012 | 0.003 |
+
+売買単位の損益(往復の売買のみ。Buy & Hold と 60/40 は適用外):
+
+| | 往復の数 | 勝率 | 平均の勝ち | 平均の負け | Profit Factor | 最大連敗 |
+|---|---|---|---|---|---|---|
+| VOO 200-day trend | 23 | 47.8% | +18.3% | −3.6% | 3.57 | 3 |
+| Momentum top 1 | 51 | 68.6% | +5.0% | −4.1% | 2.97 | 3 |
+
+![Bootstrap](reports/statistics/figures/statistical/bootstrap_intervals.png)
+![Histograms](reports/statistics/figures/return_distribution/daily_histograms.png)
+![Regime returns](reports/statistics/figures/regime/regime_returns.png)
+
+### 分かったこと
+
+**Sharpe の推定には大きな幅がある**
+- 15 年分の日次データでも、Sharpe の標準誤差は約 0.26 ある。Buy & Hold の Sharpe 0.85 の 95% 信頼区間は 0.37 〜 1.37 と広い。
+- Buy & Hold と 60/40 の Sharpe の差(−0.01)は、統計的に区別できない(p = 0.87)。Phase 4・5 で「ほぼ同じ」と書いたのは、データからもそう言える。
+
+**Buy & Hold より低いと言えるもの、言えないもの**
+- CAGR は、3戦略とも Buy & Hold より低いことが統計的にも支持された(Holm 補正後の p ≤ 0.009)。
+- Sharpe で Buy & Hold より低いと言えるのはモメンタムだけ(補正後の p = 0.012)。トレンドの差(−0.28)は、補正前は p = 0.049 だが、3戦略を同時に比べた補正をすると p = 0.098 で、5% の水準では区別できない。
+
+**リターンの分布は正規分布より裾が厚い**
+- 超過尖度は 14 〜 24(正規分布なら 0)。99% VaR は、標準偏差から正規分布を仮定して計算した値より 22 〜 33% 大きい。正規分布を前提にしたリスクの見積もりは、損失を小さく見積もる。
+- 歪度は全戦略でマイナス(大きな下落のほうが大きな上昇より起きやすい)。トレンドは最もマイナス(−0.81)で、尖度も最も高い(24)。BIL を持つ日にはリターンがほぼ 0 に集まり、株を持っている日の暴落が裾に残るため。
+
+**トレンド戦略は少数の大勝ちで稼ぐ形**
+- 勝率は 48% だが、平均の勝ち +18.3% に対して平均の負けは −3.6% で、Profit Factor は 3.57。BIL との往復を除く(株の保有だけ)と 11 回で勝率 55%。
+
+**局面別に見ると、トレンド戦略の弱点がはっきりする**
+- VOO が 200 日平均を下回っていた日(弱気、577 日)の翌日に、Buy & Hold は年率 +29% だったのに対し、トレンドは −4.5%。高ボラ局面でも同様(+31% と −3.0%)。
+- 弱気・高ボラの局面には、暴落のあとの急な反発が含まれる。トレンド戦略はこの反発を取り逃がし、下落だけを受けていた。
+- 大幅下落局面の Buy & Hold の年率 +105% は、2020年3〜4月などの急反発によるもの。この局面は「最高値から −15% より上に戻ると終わる」定義のため、損失で終わる期間は構造的に生まれにくい(`losing_spells` = 0)。この値は「大幅に下げた後に持っていた場合」の結果として読む。
+
+**相関**
+- 日次リターンの VOO との相関は、60/40 0.98、トレンド 0.84、モメンタム 0.79。VOO が下げた日だけで見ると、トレンド 0.79、モメンタム 0.75 と少し下がる。どの戦略も BIL との相関はほぼ 0。
+
+### バックテストの統計的な限界
+
+- **Look-ahead bias(未来の情報)**
+  - 対策済み:戦略は判断日までの価格しか見ず、翌営業日に約定する(Phase 5)。ローリング指標と市場局面も、その日までのデータだけで計算する。いずれもテストで確認している。
+  - 残る点:調整後価格は、あとから支払われた配当で過去の価格を調整したもの。価格の水準そのものは実際の取引価格と違うが、リターンは実際の配当込みリターンと一致する。
+- **Survivorship bias(生き残りバイアス)**
+  - 対象は、今も存在し規模の大きい ETF だけ。途中で消えた ETF や、成績が悪く選ばれなかった資産は、最初から入っていない。
+- **Selection bias(選択バイアス)**
+  - 期間(2010年以降)は VOO の上場日で決まり、たまたま米国株が特に強い期間になった。
+  - 米国株を中心に選んだこと自体が、その後の成績を知っている現在の視点による選択。
+- **Data snooping(データののぞき見)**
+  - Phase 2〜5 で同じ期間のデータを何度も見ている。今後この結果を見てから作る戦略は、同じ期間では公平に評価できない。新しい戦略は、まだ見ていない期間(今後のデータ)で確かめる必要がある。
+- **Multiple testing(多重検定)**
+  - 比べる戦略・指標・手法が増えるほど、偶然「有意」になる組が増える。ここでは同じ手法・同じ統計量の3戦略の比較に Holm 補正をかけた。
+  - パラメータを多く試した場合は、試した回数を考慮した評価(Deflated Sharpe Ratio など)が必要になる。
+- **Overfitting(過学習)**
+  - 戦略のパラメータ(200 日、252 日、月1回)は一般的な値のまま、この期間に合わせた調整はしていない。
+  - ただし、戦略の選び方自体が一般的な知識に影響されており、完全に独立な検証ではない。
+- **系列相関**
+  - 日次リターンには、ボラティリティの集中(荒れた日が続く)がある。1日単位のブートストラップはこれを無視するため、21 日ブロック法と Newey-West 法も併記した。
+- **実質的なサンプル数**
+  - 日次リターンは 3,779 件あるが、大きな下落局面は 2020年・2022年など数回しかない。暴落時のふるまいについての結論は、数回の出来事に強く依存する。
+
+### Phase 7(機械学習)で注意すること
+
+- **データの分け方:** 時系列を無作為に分けず、過去で学習して未来で検証する(walk-forward)。
+- **ラベルの重なり:** 予測対象(例:翌 21 日のリターン)が重なる場合は、学習データと検証データの間を空ける(purging / embargo)。
+- **前処理:** 標準化・特徴量の選択・欠損値の補完は、学習データの範囲だけで決める。全期間の平均や分散を使うと、未来の情報が混ざる。
+- **特徴量:** その時点で入手できるデータだけで作る(このフェーズの局面判定と同じ)。
+- **ベースライン:** Buy & Hold と、このフェーズの単純なルールを必ず比べる相手にする。
+- **評価の仕方:** コスト込みで評価し、予測の当たりやすさと、投資戦略としての損益・リスクは分けて評価する。
+- **多重比較:** 多くのモデルやパラメータを試したら、その回数を考慮した評価(多重検定の補正、Deflated Sharpe)を使う。
+- **環境の変化:** 株と債券の相関のように、市場の関係は時期によって変わる(Phase 2 で確認)。過去の関係が続く前提を置かない。
+
+### 出力 `reports/statistics/`
+
+| ファイル | 1行の単位 | 主な列 |
+|---|---|---|
+| `strategy_metrics.csv` | 戦略 | `total_return`, `cagr`, `volatility_annualized`, `max_drawdown`, `max_drawdown_peak_date`, `max_drawdown_trough_date`, `recovery_date`, `recovery_days`, `underwater_days`, `final_equity` |
+| `risk_metrics.csv` | 戦略 | `sharpe_ratio`, `sortino_ratio`, `calmar_ratio`, `mean_excess_return_annualized`, `downside_deviation_annualized`, `risk_free_cagr` |
+| `return_distribution.csv` | 戦略 × 頻度 | `observations`, `mean`, `median`, `std`, `skewness`, `excess_kurtosis`, `min`, `max`, `p01` 〜 `p99`(その頻度のリターン、年率換算なし) |
+| `var_cvar.csv` | 戦略 × 頻度 × 信頼水準 | `observations`, `tail_observations`, `var`, `cvar`(損失を正の数で) |
+| `rolling_metrics.csv` | 日付 × 戦略 × 窓 | `rolling_return_annualized`, `rolling_volatility_annualized`, `rolling_sharpe`, `rolling_max_drawdown`, `rolling_excess_return_vs_benchmark` |
+| `benchmark_comparison.csv` | 戦略 × 指標 | `strategy_value`, `benchmark_value`, `difference`(戦略 − ベンチマーク) |
+| `correlation.csv` | 行列 × 系列 | `matrix`(日次・月次・下落日の相関、日次・年率の共分散)と各系列の列 |
+| `regime_analysis.csv` / `regime_periods.csv` | 戦略 × 局面 / 局面の連続期間 | `trading_days`, `spells`, `cumulative_return`, `return_annualized`, `volatility_annualized`, `sharpe_ratio`, `max_drawdown_within_spell`, `losing_spells`, `recovered_spells`, `median_recovery_days` |
+| `statistical_tests.csv` | 戦略 × 統計量 × 手法 | `estimate`, `standard_error`, `ci_lower`, `ci_upper`, `confidence`, `p_value`, `p_value_holm`, `observations`, `resamples`, `block_size`, `seed`, `lag` |
+| `trade_statistics.csv` / `trades.csv` | 戦略 × 範囲 / 往復の売買 | `applicable`, `reason`, `win_rate`, `profit_factor`, `max_consecutive_wins`, `max_consecutive_losses` / `entry_date`, `exit_date`, `profit`, `return` |
+| `run_info.json` | − | 入力ハッシュ(価格・`backtest.toml`・`statistics.toml`)、commit、`git_dirty`、期間、件数、ブートストラップの設定、バージョン |
+
+グラフ `figures/`:`return_distribution/`(ヒストグラム、パーセンタイル)、`rolling/`(63 日・252 日)、`drawdown/`、`risk_return/`(リスクとリターン、ベンチマークとの差)、`correlation/`、`regime/`(局面の時系列、局面別の成績)、`statistical/`(ブートストラップの信頼区間)。
 
 ---
 

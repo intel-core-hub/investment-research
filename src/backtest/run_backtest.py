@@ -4,10 +4,8 @@ Each strategy runs twice on the same data and start date: with the configured
 costs and without costs. Writes CSV tables, figures and run_info.json (input
 hashes and versions for reproducibility) to reports/backtest/.
 """
-import hashlib
 import json
 import platform
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -25,6 +23,7 @@ from matplotlib.ticker import PercentFormatter  # noqa: E402
 
 import metrics as m  # noqa: E402
 from engine import BacktestResult, CostModel, run_backtest  # noqa: E402
+from provenance import content_sha256, git_state  # noqa: E402
 from scenarios import drawdown_episodes  # noqa: E402
 from strategies import build_strategy  # noqa: E402
 
@@ -157,32 +156,6 @@ def regime_returns(equities: pd.DataFrame, benchmark: str) -> pd.DataFrame:
         rows.append({"regime": label, "start": None, "end": f"{int(mask.sum())} months",
                      **monthly[mask].mean().to_dict()})
     return pd.DataFrame(rows)
-
-
-def git_state() -> dict:
-    """Commit checked out and whether tracked or untracked files differ from it (reports/ excluded).
-
-    Call before writing any report, so this run's own outputs do not count as changes.
-    """
-    def git(*args) -> str:
-        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout
-
-    try:
-        return {
-            "git_commit": git("rev-parse", "HEAD").strip(),
-            "git_dirty": bool(git("status", "--porcelain", "--", ".", ":(exclude)reports").strip()),
-        }
-    except (OSError, subprocess.CalledProcessError):
-        return {"git_commit": None, "git_dirty": None}
-
-
-def content_sha256(path: Path) -> str:
-    """SHA-256 of the file with CRLF normalized to LF.
-
-    Git stores text with LF but a Windows checkout (and pandas on Windows) writes
-    CRLF, so hashing the raw bytes would give different values on different OSes.
-    """
-    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def run_info(config: dict, prices: pd.DataFrame, start, git: dict) -> dict:
@@ -322,7 +295,7 @@ def plot_costs(summary: pd.DataFrame, names: list) -> None:
 
 
 def main() -> None:
-    git = git_state()
+    git = git_state(ROOT)
     config = load_config()
     prices = pd.read_csv(PRICES_PATH, index_col=0, parse_dates=True)
     strategies = build_all(config, prices.columns)

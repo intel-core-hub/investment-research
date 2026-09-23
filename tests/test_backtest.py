@@ -269,7 +269,7 @@ def test_results_do_not_depend_on_future_prices():
 
 
 def test_input_hash_does_not_depend_on_line_endings(tmp_path):
-    from run_backtest import content_sha256
+    from provenance import content_sha256
 
     lf, crlf, other = tmp_path / "lf.csv", tmp_path / "crlf.csv", tmp_path / "other.csv"
     lf.write_bytes(b"Date,AAA\n2024-01-02,10\n")
