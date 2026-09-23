@@ -268,6 +268,18 @@ def test_results_do_not_depend_on_future_prices():
     assert list(with_shock.equity.iloc[:cut]) == pytest.approx(list(full.equity.iloc[:cut]))
 
 
+def test_input_hash_does_not_depend_on_line_endings(tmp_path):
+    from run_backtest import content_sha256
+
+    lf, crlf, other = tmp_path / "lf.csv", tmp_path / "crlf.csv", tmp_path / "other.csv"
+    lf.write_bytes(b"Date,AAA\n2024-01-02,10\n")
+    crlf.write_bytes(b"Date,AAA\r\n2024-01-02,10\r\n")
+    other.write_bytes(b"Date,AAA\n2024-01-02,11\n")
+
+    assert content_sha256(lf) == content_sha256(crlf)
+    assert content_sha256(lf) != content_sha256(other)
+
+
 def test_same_input_gives_identical_results():
     prices = random_prices()
     strategy = Momentum("m", ["AAA", "BBB"], "CASH", lookback_days=60)

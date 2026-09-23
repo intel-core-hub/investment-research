@@ -176,15 +176,21 @@ def git_state() -> dict:
         return {"git_commit": None, "git_dirty": None}
 
 
-def run_info(config: dict, prices: pd.DataFrame, start, git: dict) -> dict:
-    def sha256(path: Path) -> str:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+def content_sha256(path: Path) -> str:
+    """SHA-256 of the file with CRLF normalized to LF.
 
+    Git stores text with LF but a Windows checkout (and pandas on Windows) writes
+    CRLF, so hashing the raw bytes would give different values on different OSes.
+    """
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def run_info(config: dict, prices: pd.DataFrame, start, git: dict) -> dict:
     return {
         "prices_file": PRICES_PATH.relative_to(ROOT).as_posix(),
-        "prices_sha256": sha256(PRICES_PATH),
+        "prices_sha256": content_sha256(PRICES_PATH),
         "config_file": CONFIG_PATH.relative_to(ROOT).as_posix(),
-        "config_sha256": sha256(CONFIG_PATH),
+        "config_sha256": content_sha256(CONFIG_PATH),
         **git,
         "data_start": str(prices.index[0].date()),
         "trading_start": str(start.date()),
