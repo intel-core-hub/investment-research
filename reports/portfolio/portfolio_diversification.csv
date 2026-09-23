@@ -1,0 +1,7 @@
+portfolio,target_weights,weighted_average_volatility,portfolio_volatility,diversification_ratio,volatility_reduction,realized_volatility_annual_rebalance
+US equity,VOO 100%,0.169698,0.169698,1.0,0.0,0.169698
+Global equity,VT 100%,0.170607,0.170607,1.0,0.0,0.170607
+US + Japan,VOO 70% / EWJ 30%,0.172924,0.1622,1.066117,0.062017,0.162304
+US 60/40,VOO 60% / BND 40%,0.1212,0.104395,1.160982,0.13866,0.102698
+Global 60/40,VT 60% / BND 40%,0.121746,0.10522,1.157058,0.135739,0.102934
+Conservative,VOO 30% / BND 40% / BIL 30%,0.071083,0.05518,1.288197,0.223721,0.05377

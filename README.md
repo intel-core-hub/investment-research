@@ -20,6 +20,7 @@ python src/analysis/compare_assets.py # 資産比較 → reports/comparison/
 python src/analysis/analyze_voo.py    # VOO 単体レポート(Phase 1) → reports/
 python src/simulation/run_dca.py      # Phase 3 全期間の積立シミュレーション → reports/simulation/
 python src/simulation/run_scenarios.py # Phase 3 開始時期・期間・暴落別の比較 → reports/simulation/
+python src/portfolio/run_portfolios.py # Phase 4 ポートフォリオ比較 → reports/portfolio/
 python -m pytest                      # テスト
 ```
 
@@ -30,7 +31,8 @@ VOO だけ取り直すときは `python src/data/fetch_voo.py`。
 ```
 config/
 ├─ assets.toml               比較する資産とローリング期間の設定
-└─ simulation.toml           積立額・比較する投資期間・暴落の判定基準
+├─ simulation.toml           積立額・比較する投資期間・暴落の判定基準
+└─ portfolios.toml           ポートフォリオの配分・リバランス頻度・金額・無リスク資産
 src/
 ├─ data/
 │  ├─ prices.py              取得仕様・設定読み込み・CSV 入出力(共通部品)
@@ -42,18 +44,22 @@ src/
 │  ├─ metrics.py             リターン・リスク指標の定義(全分析で共通)
 │  ├─ compare_assets.py      複数資産の比較分析
 │  └─ analyze_voo.py         VOO 単体の分析
-└─ simulation/
-   ├─ dca.py                 積立・一括投資のエンジン、ドローダウンと回復期間
-   ├─ scenarios.py           開始日・期間・暴落タイミングを変えて繰り返し実行
-   ├─ run_dca.py             全期間の実行
-   └─ run_scenarios.py       シナリオ比較の実行とグラフ出力
-tests/                       シミュレーションの自動テスト(pytest)
+├─ simulation/
+│  ├─ dca.py                 積立・一括投資のエンジン、ドローダウンと回復期間
+│  ├─ scenarios.py           開始日・期間・暴落タイミングを変えて繰り返し実行
+│  ├─ run_dca.py             全期間の実行
+│  └─ run_scenarios.py       シナリオ比較の実行とグラフ出力
+└─ portfolio/
+   ├─ portfolio.py           設定の検証、Buy & Hold・リバランス・積立のエンジン、指標
+   └─ run_portfolios.py      全ポートフォリオの比較とグラフ出力
+tests/                       自動テスト(pytest)
 data/
 ├─ raw/<ticker>.csv          資産ごとの取得データ
 └─ processed/prices.csv      共通期間の調整後終値(列 = 資産)
 reports/
 ├─ comparison/               Phase 2 の比較結果(CSV とグラフ)
 ├─ simulation/               Phase 3 の積立シミュレーション結果(CSV とグラフ)
+├─ portfolio/                Phase 4 のポートフォリオ比較結果(CSV とグラフ)
 ├─ figures/                  Phase 1 の VOO グラフ
 ├─ voo_yearly_returns.csv
 └─ voo_monthly_returns.csv
@@ -111,8 +117,142 @@ reports/
 | ローリングボラティリティ | 直近 N 営業日の日次リターンの標準偏差 × √252 |
 | 相関 | 日次リターンと月次リターンのピアソン相関係数 |
 | 年次・月次リターン | 各期末の終値 ÷ 前期末の終値 − 1。最初の期は初日の終値から |
+| Sharpe ratio | 超過リターン(日次リターン − BIL の日次リターン)の平均 × 252 ÷ (その標準偏差 × √252) |
 
 N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
+
+---
+
+## Phase 4:ポートフォリオ分析
+
+### 完了条件との対応
+
+| 完了条件 | 実装 |
+|---|---|
+| 複数資産の配分を設定ファイルから指定できる | `config/portfolios.toml` の `[[portfolios]]` |
+| ウェイトの妥当性を自動検証できる | `validate_config`。問題をすべてまとめて報告し、実行を止める |
+| ポートフォリオの日次リターン | `daily_returns`(入金分を除いた時間加重リターン) → `portfolio_daily_returns.csv` |
+| 累積リターン・CAGR・年率ボラティリティ・最大ドローダウン | `summarize`。Phase 2 と同じ `metrics.py` の関数で計算 |
+| Sharpe ratio | `metrics.sharpe_ratio`。無リスク金利は BIL の日次リターン |
+| 相関を考慮した分散効果 | `diversification` → `portfolio_diversification.csv`、`figures/diversification.png` |
+| Buy & Hold | `rebalance = "none"` |
+| 定期リバランス | `annual` / `quarterly` / `monthly` |
+| DCA との組み合わせ | `monthly_contribution` を指定すると、毎月の入金を目標配分で買い付ける |
+| リバランス頻度を変更できる | `rebalance_frequencies`(比較する頻度)と `default_rebalance`(ポートフォリオ同士の比較に使う頻度) |
+| 複数ポートフォリオを同一条件で比較 | 全ポートフォリオ × 全頻度 × {一括, 積立} を、同じ期間・同じ金額で実行(48 通り) |
+| CSV 保存・グラフ出力 | `reports/portfolio/` |
+| 自動テスト | `tests/test_portfolio.py`(32 件)。テスト全体は 56 件 |
+
+### 設定 `config/portfolios.toml`
+
+| 項目 | 初期値 | 意味 |
+|---|---|---|
+| `initial_investment` | 10000 | 一括投資の額(初日に投資) |
+| `monthly_contribution` | 10000 | 積立の額(毎月の最初の取引日に投資) |
+| `rebalance_frequencies` | none, annual, quarterly, monthly | 比較するリバランス頻度 |
+| `default_rebalance` | annual | ポートフォリオ同士を比べるときの頻度 |
+| `risk_free_ticker` | BIL | Sharpe ratio の無リスク金利に使う資産 |
+
+ウェイトの検証ルール(1つでも破ると実行しない):
+
+- ティッカーが `data/processed/prices.csv` にある
+- 各ウェイトが 0 より大きく 1 以下の数値(空売り・レバレッジはなし)
+- ポートフォリオごとの合計が 1(誤差 0.000001 まで)
+- ポートフォリオ名が重複していない
+- リバランス頻度・無リスク資産・金額の設定が正しい
+
+初期値のポートフォリオ:
+
+| 名前 | 配分 |
+|---|---|
+| US equity | VOO 100% |
+| Global equity | VT 100% |
+| US + Japan | VOO 70% / EWJ 30% |
+| US 60/40 | VOO 60% / BND 40% |
+| Global 60/40 | VT 60% / BND 40% |
+| Conservative | VOO 30% / BND 40% / BIL 30% |
+
+### 前提条件
+
+- **売買のタイミング:** 入金日とリバランス日の終値で売買する。価格は配当込みの調整後終値なので、配当は自動で再投資されたことになる。
+- **初日:** 目標配分どおりに買う。
+- **リバランス:** 各期間(年・四半期・月)の最初の取引日に、資産全体を目標配分に戻す。
+- **積立:** 毎月の入金を目標配分どおりに分けて買う。リバランスの頻度とは別に動く。
+- **日次リターン:** その日の入金を差し引いてから計算する(時間加重)。入金による評価額の増加は、リターンに数えない。CAGR・ボラティリティ・最大DD・Sharpe はこのリターンから計算する。
+- **積立の損益:** 最終評価額 ÷ 投資額と、Phase 3 と同じ「前回の高値 + その後の入金額」を基準にしたドローダウン(`money_max_drawdown`)も出す。
+- **売買の量:** `annual_turnover` = 売買した金額の合計 ÷ 2 ÷ 平均評価額 ÷ 年数(片道の年間売買回転率)。
+- **分散効果:** 日次リターンの共分散から、配分を一定に保った場合のボラティリティを計算する。これを「全資産の相関が1だった場合(各資産のボラティリティの加重平均)」と比べる。
+- **含まないもの:** 手数料・税金・スプレッド・為替。すべて USD 建て。
+
+### 出力 `reports/portfolio/`
+
+| ファイル | 内容 |
+|---|---|
+| `portfolio_summary.csv` | ポートフォリオ × リバランス頻度 × {一括, 積立} の指標(48 行)。最終時点の配分も含む |
+| `portfolio_diversification.csv` | 分散効果(加重平均ボラティリティ、ポートフォリオのボラティリティ、分散比率) |
+| `portfolio_nav.csv` / `portfolio_daily_returns.csv` | 基準頻度(annual)の一括投資の日々の価値(初期値 1)と日次リターン |
+| `portfolio_dca_values.csv` | 基準頻度の積立の評価額と投資額の推移 |
+| `figures/growth.png` / `drawdowns.png` | 価値の推移(対数軸)とドローダウン |
+| `figures/risk_return.png` | ボラティリティと CAGR(単一資産をグレーで併記) |
+| `figures/rebalancing.png` | リバランス頻度別の CAGR・ボラティリティ・最大DD・Sharpe |
+| `figures/weight_drift.png` | リバランスしない場合の配分のずれ |
+| `figures/diversification.png` | 分散によってボラティリティがどれだけ下がったか |
+| `figures/dca_growth.png` | 月 10,000 の積立の推移 |
+
+### 結果(2010-09-09 〜 2026-09-21、年1回リバランス、一括投資)
+
+| | CAGR | 年率ボラティリティ | 最大DD | Sharpe | 分散による ボラティリティ低下 |
+|---|---|---|---|---|---|
+| US equity | 14.95% | 16.97% | −34.0% | 0.83 | − |
+| Global equity | 11.08% | 17.06% | −34.2% | 0.62 | − |
+| US + Japan | 12.92% | 16.23% | −31.2% | 0.75 | −6% |
+| US 60/40 | 9.96% | 10.27% | −21.1% | 0.84 | −14% |
+| Global 60/40 | 7.64% | 10.29% | −22.3% | 0.63 | −14% |
+| Conservative | 5.91% | 5.38% | −13.4% | 0.84 | −22% |
+
+リバランス頻度の比較(US 60/40):
+
+| | CAGR | ボラティリティ | 最大DD | Sharpe | 年間売買回転率 | 最終時点の配分 |
+|---|---|---|---|---|---|---|
+| なし(Buy & Hold) | 12.01% | 13.15% | −27.6% | 0.82 | 0% | VOO 91% / BND 9% |
+| 年1回 | 9.96% | 10.27% | −21.1% | 0.84 | 3.3% | VOO 63% / BND 37% |
+| 四半期 | 10.03% | 10.30% | −21.1% | 0.85 | 6.2% | VOO 61% / BND 39% |
+| 毎月 | 9.94% | 10.32% | −21.7% | 0.84 | 9.6% | VOO 61% / BND 39% |
+
+![Risk and return](reports/portfolio/figures/risk_return.png)
+![Rebalancing](reports/portfolio/figures/rebalancing.png)
+![Weight drift](reports/portfolio/figures/weight_drift.png)
+![Diversification](reports/portfolio/figures/diversification.png)
+
+### 分かったこと
+
+**分散効果は「相関の低い資産」を混ぜたときに大きい**
+- 株と債券(日次リターンの相関 0.05)を 60/40 で混ぜると、ボラティリティは加重平均より 14% 下がった。短期国債(相関ほぼ 0)も加えた Conservative では 22% 下がった。
+- 米国株と日本株(日次リターンの相関 0.72)の組み合わせでは 6% にとどまった。株式同士では、分散の効果は小さい。
+
+**リスクあたりのリターン(Sharpe)は、米国株 100% と 60/40 でほぼ同じ**
+- US equity 0.83、US 60/40 0.84、Conservative 0.84。債券を混ぜるとリターンは下がるが、リスクも同じくらい下がった。
+- この期間の Global 系(0.62〜0.63)は、米国系より Sharpe が低かった。
+
+**リバランスしないと、配分は大きくずれる**
+- US 60/40 を買ったまま放置すると、16年で VOO 91% / BND 9% になり、実質ほぼ株式のポートフォリオになった。その結果、リターンは高かった(12.0%)が、最大DD も −27.6% と、60/40 として想定していたリスクを超えた。
+- 年1回リバランスすると、配分はほぼ 60/40 に保たれ、最大DD は −21.1%。
+- リバランスで得をしたわけではない(この期間は株が強かったため、放置したほうがリターンは高い)。リバランスの役割は、**リスクを決めた水準に保つこと** だと分かる。
+
+**リバランスの頻度はほとんど結果を変えない**
+- 年1回・四半期・毎月の差は、どのポートフォリオでも CAGR で 0.2 ポイント以内、最大DD で 0.6 ポイント以内。
+- 一方で売買の量は、年1回 3.3% → 毎月 9.6% と約3倍になる。手数料や税を考えると、頻度を上げる理由は見当たらない。
+
+**積立でも同じ傾向**
+- 月 10,000 を 16 年(総額 1,930,000)積み立てた場合、最終評価額は US equity 7.23M、US 60/40 4.51M、Conservative 3.20M。
+- 積立の最大ドローダウン(入金を考慮)は US equity −34.0%、US 60/40 −21.1%、Conservative −13.1%。
+
+### 解釈するときの注意
+
+- 結果は 2010〜2026年という1つの期間のもの。この期間は米国株が特に強く、2022年までは株と債券の相関も低かった(Phase 2 参照)。期間が変われば順位も変わりうる。
+- 分散効果の計算は、全期間の相関を使っている。Phase 2 で見たとおり、株と債券の相関は 2022年以降に上がっており、最近ほど債券による分散効果は小さくなっている。
+- 手数料・税を含まない。実際にはリバランスのたびに売却益への課税が発生しうる(NISA 口座内を除く)。
+- USD 建てで、為替の影響を含まない。
 
 ---
 

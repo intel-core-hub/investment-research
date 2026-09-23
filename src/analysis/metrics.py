@@ -35,6 +35,12 @@ def annual_volatility(prices):
     return daily_returns(prices).std() * np.sqrt(TRADING_DAYS)
 
 
+def sharpe_ratio(prices, risk_free_prices: pd.Series):
+    """Annualized mean excess daily return over its annualized standard deviation."""
+    excess = daily_returns(prices).sub(daily_returns(risk_free_prices), axis=0)
+    return excess.mean() * TRADING_DAYS / (excess.std() * np.sqrt(TRADING_DAYS))
+
+
 def drawdowns(prices):
     return prices / prices.cummax() - 1
 

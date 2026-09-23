@@ -1,0 +1,36 @@
+# Phase 4 portfolio settings.
+# Weights are target allocations: every ticker must exist in data/processed/prices.csv,
+# each weight must be > 0, and the weights of a portfolio must sum to 1.
+
+initial_investment = 10000     # lump sum invested on the first day
+monthly_contribution = 10000   # DCA: invested on the first trading day of each month
+
+# "none" = buy & hold (no rebalancing); others rebalance on the first trading day of each period
+rebalance_frequencies = ["none", "annual", "quarterly", "monthly"]
+default_rebalance = "annual"   # used when comparing portfolios with each other
+
+risk_free_ticker = "BIL"       # daily return of T-bills used as the risk-free rate for Sharpe ratio
+
+[[portfolios]]
+name = "US equity"
+weights = { VOO = 1.0 }
+
+[[portfolios]]
+name = "Global equity"
+weights = { VT = 1.0 }
+
+[[portfolios]]
+name = "US + Japan"
+weights = { VOO = 0.7, EWJ = 0.3 }
+
+[[portfolios]]
+name = "US 60/40"
+weights = { VOO = 0.6, BND = 0.4 }
+
+[[portfolios]]
+name = "Global 60/40"
+weights = { VT = 0.6, BND = 0.4 }
+
+[[portfolios]]
+name = "Conservative"
+weights = { VOO = 0.3, BND = 0.4, BIL = 0.3 }
