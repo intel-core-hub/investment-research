@@ -159,7 +159,7 @@ N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
 
 ---
 
-## Phase 8:Streamlit 分析ダッシュボード
+## Phase 8:Streamlit 分析ダッシュボード（完了）
 
 Phase 1〜7 の分析を、コードを編集せずにブラウザで条件を変えて確認できるようにした。計算はすべて既存のモジュール(`metrics`・`portfolio`・`engine`・`strategies`・`performance`・`inference`・`trades`・`run_ml`)を呼び出しており、ダッシュボード用に指標を定義し直していない。そのため、同じ条件ならレポートと同じ数値になる(テストで確認)。
 
