@@ -1,0 +1,25 @@
+strategy,benchmark,metric,strategy_value,benchmark_value,difference
+60/40 annual rebalance,Buy & Hold VOO,total_return,3.290735023,7.748422196,-4.457687173
+60/40 annual rebalance,Buy & Hold VOO,cagr,0.1017093704,0.1551644514,-0.05345508092
+60/40 annual rebalance,Buy & Hold VOO,volatility_annualized,0.103080752,0.1684631029,-0.0653823509
+60/40 annual rebalance,Buy & Hold VOO,max_drawdown,-0.2122842535,-0.3399298223,0.1276455688
+60/40 annual rebalance,Buy & Hold VOO,sharpe_ratio,0.8485531666,0.8541911931,-0.00563802647
+60/40 annual rebalance,Buy & Hold VOO,sortino_ratio,1.194381125,1.208785211,-0.01440408569
+60/40 annual rebalance,Buy & Hold VOO,calmar_ratio,0.47911877,0.4564602491,0.02265852092
+60/40 annual rebalance,Buy & Hold VOO,final_equity,42907.35023,87484.22196,-44576.87173
+VOO 200-day trend,Buy & Hold VOO,total_return,2.601772113,7.748422196,-5.146650083
+VOO 200-day trend,Buy & Hold VOO,cagr,0.08895910884,0.1551644514,-0.06620534251
+VOO 200-day trend,Buy & Hold VOO,volatility_annualized,0.1414446763,0.1684631029,-0.02701842664
+VOO 200-day trend,Buy & Hold VOO,max_drawdown,-0.354914674,-0.3399298223,-0.01498485163
+VOO 200-day trend,Buy & Hold VOO,sharpe_ratio,0.5696521559,0.8541911931,-0.2845390371
+VOO 200-day trend,Buy & Hold VOO,sortino_ratio,0.7792361615,1.208785211,-0.4295490496
+VOO 200-day trend,Buy & Hold VOO,calmar_ratio,0.2506492838,0.4564602491,-0.2058109652
+VOO 200-day trend,Buy & Hold VOO,final_equity,36017.72113,87484.22196,-51466.50083
+Momentum top 1,Buy & Hold VOO,total_return,1.730191543,7.748422196,-6.018230653
+Momentum top 1,Buy & Hold VOO,cagr,0.06907797861,0.1551644514,-0.08608647275
+Momentum top 1,Buy & Hold VOO,volatility_annualized,0.1574016976,0.1684631029,-0.01106140536
+Momentum top 1,Buy & Hold VOO,max_drawdown,-0.3790014874,-0.3399298223,-0.03907166509
+Momentum top 1,Buy & Hold VOO,sharpe_ratio,0.409688618,0.8541911931,-0.444502575
+Momentum top 1,Buy & Hold VOO,sortino_ratio,0.5649168328,1.208785211,-0.6438683783
+Momentum top 1,Buy & Hold VOO,calmar_ratio,0.1822630805,0.4564602491,-0.2741971686
+Momentum top 1,Buy & Hold VOO,final_equity,27301.91543,87484.22196,-60182.30653

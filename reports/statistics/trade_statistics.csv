@@ -1,0 +1,7 @@
+strategy,strategy_type,scope,applicable,reason,closed_trades,wins,losses,win_rate,average_win_return,average_loss_return,average_win_profit,average_loss_profit,profit_factor,max_consecutive_wins,max_consecutive_losses,average_holding_days,total_profit,open_positions_at_end
+Buy & Hold VOO,buy_and_hold,all,False,holds one position for the whole period; no trade is ever closed,,,,,,,,,,,,,,
+60/40 annual rebalance,periodic_rebalance,all,False,rebalancing adjusts positions without closing them; trades have no entry/exit,,,,,,,,,,,,,,
+VOO 200-day trend,moving_average,all,True,,23,11,12,0.4782608696,0.1825552612,-0.03597687875,2942.975166,-756.6312292,3.565445267,5,3,232.6521739,23293.15207,1
+VOO 200-day trend,moving_average,excluding BIL,True,,11,6,5,0.5454545455,0.331797883,-0.08402810664,5323.824981,-1777.81236,3.59351196,2,2,412,23053.88809,1
+Momentum top 1,momentum,all,True,,51,35,16,0.6862745098,0.04964214143,-0.04078484369,687.4910465,-505.999449,2.972111269,9,3,105.4901961,15966.19544,1
+Momentum top 1,momentum,excluding BIL,True,,49,34,15,0.693877551,0.0503585495,-0.04348627969,697.6401496,-539.5186836,2.93097852,8,2,102.3265306,15626.98483,1
