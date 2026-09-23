@@ -18,7 +18,9 @@ python src/data/quality_check.py      # 全資産の品質チェック → repor
 python src/data/build_dataset.py      # 共通期間のデータセット作成 → data/processed/prices.csv
 python src/analysis/compare_assets.py # 資産比較 → reports/comparison/
 python src/analysis/analyze_voo.py    # VOO 単体レポート(Phase 1) → reports/
-python src/simulation/run_dca.py     # Phase 3 積立シミュレーション → reports/simulation/
+python src/simulation/run_dca.py      # Phase 3 全期間の積立シミュレーション → reports/simulation/
+python src/simulation/run_scenarios.py # Phase 3 開始時期・期間・暴落別の比較 → reports/simulation/
+python -m pytest                      # テスト
 ```
 
 VOO だけ取り直すときは `python src/data/fetch_voo.py`。
@@ -27,7 +29,8 @@ VOO だけ取り直すときは `python src/data/fetch_voo.py`。
 
 ```
 config/
-└─ assets.toml               比較する資産とローリング期間の設定
+├─ assets.toml               比較する資産とローリング期間の設定
+└─ simulation.toml           積立額・比較する投資期間・暴落の判定基準
 src/
 ├─ data/
 │  ├─ prices.py              取得仕様・設定読み込み・CSV 入出力(共通部品)
@@ -35,15 +38,22 @@ src/
 │  ├─ fetch_voo.py           VOO だけ取得
 │  ├─ quality_check.py       全資産の品質チェック
 │  └─ build_dataset.py       共通期間にそろえた比較用データセットを作成
-└─ analysis/
-   ├─ metrics.py             リターン・リスク指標の定義(全分析で共通)
-   ├─ compare_assets.py      複数資産の比較分析
-   └─ analyze_voo.py         VOO 単体の分析
+├─ analysis/
+│  ├─ metrics.py             リターン・リスク指標の定義(全分析で共通)
+│  ├─ compare_assets.py      複数資産の比較分析
+│  └─ analyze_voo.py         VOO 単体の分析
+└─ simulation/
+   ├─ dca.py                 積立・一括投資のエンジン、ドローダウンと回復期間
+   ├─ scenarios.py           開始日・期間・暴落タイミングを変えて繰り返し実行
+   ├─ run_dca.py             全期間の実行
+   └─ run_scenarios.py       シナリオ比較の実行とグラフ出力
+tests/                       シミュレーションの自動テスト(pytest)
 data/
 ├─ raw/<ticker>.csv          資産ごとの取得データ
 └─ processed/prices.csv      共通期間の調整後終値(列 = 資産)
 reports/
 ├─ comparison/               Phase 2 の比較結果(CSV とグラフ)
+├─ simulation/               Phase 3 の積立シミュレーション結果(CSV とグラフ)
 ├─ figures/                  Phase 1 の VOO グラフ
 ├─ voo_yearly_returns.csv
 └─ voo_monthly_returns.csv
@@ -116,18 +126,93 @@ Phase 2で整備した共通価格データを使い、毎月10,000の固定額�
 - 資産ごとの結果をCSVに出力
 - USD建て価格を使うため、10,000は正規化した拠出額として扱う
 
-実行:
-
-```
-python src/simulation/run_dca.py
-```
-
-出力:
-
-- `reports/simulation/dca_summary.csv`
-- `reports/simulation/dca_paths.csv`
-
 為替、手数料、税、実際の約定条件はPhase 9で扱う。
+
+### 実装の対応表
+
+| 項目 | 実装 |
+|---|---|
+| ① DCA基本エンジン 〜 ⑧ 複数資産 | `dca.py`、`run_dca.py` |
+| ⑨ 開始時期を変える | `start_year_runs`:各年の最初の取引日から、最新の確定月まで積み立てる |
+| ⑩ 投資期間を変える | `rolling_windows`:1/3/5/10年(`simulation.toml` の `horizons_years`) |
+| ⑪ 暴落との関係 | `drawdown_episodes` で 15% 以上の下落を検出し、`crash_start_runs` で高値・底・回復日から開始 |
+| ⑫ 最大ドローダウン | `contribution_adjusted_drawdown`:基準 = 前回の高値 + その後の入金額 |
+| ⑬ 回復期間 | `drawdown_stats`:底から基準値に戻るまでの日数(暦日) |
+| ⑭ 多数の開始日で比較 | 全ての月初を開始日にして実行し、`window_stats` で分布を集計 |
+| ⑮ グラフ化 | `run_scenarios.py` → `figures/` |
+| ⑯ テスト | `tests/`(pytest、24件) |
+
+### シナリオの決め方
+
+- **期間:** 開始日から、N か月目の月末の最終取引日までの「月まるごと」で区切る。データの最後の月は途中の可能性があるため、評価には使わない。
+- **積立額と一括額:** 積立は開始日とその後の各月の最初の取引日に入金する。一括投資は同じ総額を開始日に投資する。
+- **待機資金:** 積立でまだ投資していないお金は、**利息ゼロ** として扱う(BIL などで運用はしていない)。
+- **積立のドローダウン:** 評価額の単純な高値を基準にすると、新しい入金で含み損が隠れる。そこで「前回の高値 + その後の入金額」を基準にした。一括投資では、これは通常のドローダウンと同じになる。
+- **暴落期間:** 価格が高値から 15% 以上下げた期間を、高値 → 底 → 高値回復 の3点で記録する(`simulation.toml` の `crash_threshold`)。
+
+### 出力 `reports/simulation/`
+
+| ファイル | 内容 |
+|---|---|
+| `dca_summary.csv` / `dca_paths.csv` | 全期間の結果(ドローダウン・回復日数を含む)と日々の推移 |
+| `dca_windows.csv` | 開始月×投資期間の全シナリオ(3,264 件) |
+| `dca_window_stats.csv` | 資産×投資期間ごとの分布(一括投資の勝率、損失になった割合、ドローダウンなど) |
+| `dca_by_start_year.csv` | 開始年別(最新の確定月まで積立) |
+| `drawdown_episodes.csv` | 検出した暴落期間(22 件) |
+| `dca_crash_starts.csv` | 暴落の高値・底・回復日から始めた結果 |
+| `figures/start_date_{1,3,5,10}y.png` | 開始日別のリターン(暴落期間を網掛け) |
+| `figures/lump_sum_win_rate.png` | 一括投資が積立を上回った割合 |
+
+### 結果(2010-09 〜 2026-08 の開始日、USD 建て、配当込み)
+
+一括投資が積立を上回った開始日の割合:
+
+| | 1年 | 3年 | 5年 | 10年 |
+|---|---|---|---|---|
+| VOO | 83% | 98% | 100% | 100% |
+| VTI | 82% | 96% | 100% | 100% |
+| VT | 75% | 92% | 100% | 100% |
+| EWJ | 65% | 80% | 97% | 100% |
+| BND | 70% | 80% | 81% | 100% |
+| BIL | 59% | 68% | 74% | 100% |
+
+VOO で、積立の最終評価額が一括投資をどれだけ下回ったか(中央値):1年 −6.3%、3年 −16.6%、5年 −25.9%、10年 −42.9%。
+
+![Lump sum win rate](reports/simulation/figures/lump_sum_win_rate.png)
+![Start date, 3 years](reports/simulation/figures/start_date_3y.png)
+
+### 分かったこと
+
+**この期間では、ほとんどの開始日で一括投資が上回った**
+- 期間が長いほど差が広がる。5年以上の株式では、ほぼ全ての開始日で一括投資が上だった。
+- 理由は単純で、この期間の資産はほとんどの時期に上昇しており、早く全額を投資したほうが上昇を長く受けられたため。積立は、投資を待っている資金の分だけ上昇を取り逃がす。
+
+**積立が上回ったのは、始めた直後に下落が来た場合**
+- VOO の暴落5回のうち、**高値で始めて1年で評価** した場合は4回で積立が上回った(2011年 +5.7%、2018年 +3.3%、2020年 +5.1%、2022年 +15.0%)。2022年は3年でも積立が上だった(+4.0%)。
+- 逆に **底で始めた** 場合は、1年でも積立の評価額が一括投資を 13〜29% 下回った。
+- つまり積立の利点は、平均的なリターンではなく「始める時期が悪かったときの損を小さくする」ことにある。
+
+**積立のドローダウンは、期間の初めほど小さい**
+- VOO 5年の最大ドローダウン(中央値)は、積立 −21.3%、一括 −24.5%。
+- 10年になるとどちらも −34%(2020年)。資産がたまった後の暴落では、積立も一括と同じだけ下がる。
+- 全期間(2010年開始)の積立では、評価額が投資額を下回った日は VOO で 1.7%、最悪でも投資額の −10.6% だった。
+
+**債券(BND)は例外的な動き**
+- 2021〜2022年に始めた場合は、最新までの積立が一括投資を上回った。2022年の下落の間も、安い価格で買い続けたため。
+- 全期間で見ると、一括投資は 2022年の下落からまだ回復していない。一方、積立は 1,092 日で回復した。
+
+### 解釈するときの注意
+
+- **一括投資との比較が意味を持つのは、まとまった資金が手元にあるときだけ。** 毎月の収入から積み立てる場合、そもそも一括投資という選択肢はない。その場合に比べるべきは「積立する/しない」や「どの資産に積み立てるか」になる。
+- 待機資金の利息を0にしているため、積立は不利に出ている。特に短期金利が約5%だった 2023〜2024年は影響が大きい。
+- 結果は 2010〜2026年という、米国株が強かった1つの期間のもの。開始日をずらした期間は互いに重なっているため、3,264 件は独立した試行ではない。
+- USD 建てで、為替・手数料・税は含まない。
+
+### 次に検討すること
+
+- 待機資金を BIL で運用した場合の比較
+- 円建てでの積立(為替の影響)
+- Phase 4:複数資産を組み合わせたポートフォリオでの積立
 
 ---
 

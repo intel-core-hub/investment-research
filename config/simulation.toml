@@ -3,6 +3,12 @@ monthly_contribution = 10000
 currency = "JPY"
 contribution_day = 1
 
+# Investment horizons (years) compared across start dates
+horizons_years = [1, 3, 5, 10]
+
+# A price drawdown at least this deep counts as a crash episode
+crash_threshold = 0.15
+
 # Current prices are USD-denominated adjusted closes.
 # The contribution is therefore a normalized amount.
 # FX, fees, taxes and execution are deferred to Phase 9.

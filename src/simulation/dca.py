@@ -8,6 +8,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
 PRICES_PATH = ROOT / "data" / "processed" / "prices.csv"
+EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
@@ -88,8 +89,64 @@ def simulate_lump_sum(
     return (total / prices.iloc[0]) * prices
 
 
+def contribution_adjusted_drawdown(value: pd.Series, contributions: pd.Series) -> pd.Series:
+    """Drawdown of a portfolio that receives contributions.
+
+    The high-water mark is the previous peak value plus everything contributed
+    since then, so new money neither hides a loss nor counts as a recovery.
+    With constant contributions (a lump sum) this is the ordinary drawdown.
+    """
+    high_water = contributions + (value - contributions).cummax()
+    return value / high_water - 1
+
+
+def drawdown_stats(value: pd.Series, contributions: pd.Series) -> dict:
+    """Largest contribution-adjusted drawdown and how long it took to recover.
+
+    days_to_recover counts calendar days from the trough back to the high-water
+    mark; it is NaN when the portfolio has not recovered by the last date.
+    """
+    dd = contribution_adjusted_drawdown(value, contributions)
+    trough = dd.idxmin()
+    if dd[trough] >= -EPSILON:
+        return {"max_drawdown": 0.0, "drawdown_peak": pd.NaT, "drawdown_trough": pd.NaT,
+                "recovery_date": pd.NaT, "days_to_recover": 0.0}
+
+    before = dd.loc[:trough]
+    peak = before[before >= -EPSILON].index[-1]
+    after = dd.loc[trough:]
+    recovered = after[after >= -EPSILON]
+    recovery = recovered.index[0] if len(recovered) else pd.NaT
+    return {
+        "max_drawdown": float(dd[trough]),
+        "drawdown_peak": peak,
+        "drawdown_trough": trough,
+        "recovery_date": recovery,
+        "days_to_recover": float((recovery - trough).days) if len(recovered) else float("nan"),
+    }
+
+
+def cost_basis_stats(value: pd.Series, contributions: pd.Series) -> dict:
+    """How far and how often the portfolio fell below the money put in."""
+    vs_contributed = value / contributions - 1
+    return {
+        "worst_vs_contributed": float(vs_contributed.min()),
+        "share_days_below_contributed": float((vs_contributed < 0).mean()),
+    }
+
+
+def _date(ts: pd.Timestamp):
+    return ts.date() if pd.notna(ts) else None
+
+
+def lump_sum_contributions(lump_sum: pd.Series) -> pd.Series:
+    return pd.Series(float(lump_sum.iloc[0]), index=lump_sum.index)
+
+
 def summarize(result: SimulationResult, lump_sum: pd.Series) -> dict:
     """Return a compact summary for one DCA run."""
+    dca_dd = drawdown_stats(result.portfolio_value, result.contributions)
+    lump_dd = drawdown_stats(lump_sum, lump_sum_contributions(lump_sum))
     return {
         "ticker": result.ticker,
         "start": result.portfolio_value.index[0].date(),
@@ -102,4 +159,11 @@ def summarize(result: SimulationResult, lump_sum: pd.Series) -> dict:
         "return_on_contributions": result.return_on_contributions,
         "lump_sum_final_value": float(lump_sum.iloc[-1]),
         "dca_vs_lump_sum": result.final_value / lump_sum.iloc[-1] - 1,
+        "dca_max_drawdown": dca_dd["max_drawdown"],
+        "dca_drawdown_trough": _date(dca_dd["drawdown_trough"]),
+        "dca_days_to_recover": dca_dd["days_to_recover"],
+        "lump_sum_max_drawdown": lump_dd["max_drawdown"],
+        "lump_sum_drawdown_trough": _date(lump_dd["drawdown_trough"]),
+        "lump_sum_days_to_recover": lump_dd["days_to_recover"],
+        **{f"dca_{k}": v for k, v in cost_basis_stats(result.portfolio_value, result.contributions).items()},
     }
