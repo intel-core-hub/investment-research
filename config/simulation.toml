@@ -1,0 +1,8 @@
+# Phase 3 DCA simulation settings
+monthly_contribution = 10000
+currency = "JPY"
+contribution_day = 1
+
+# Current prices are USD-denominated adjusted closes.
+# The contribution is therefore a normalized amount.
+# FX, fees, taxes and execution are deferred to Phase 9.
