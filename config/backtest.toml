@@ -1,0 +1,43 @@
+# Phase 5 backtest settings.
+# Signals are decided at a day's close and filled at the next trading day's close.
+
+initial_cash = 10000
+risk_free_ticker = "BIL"        # risk-free rate for Sharpe ratio
+benchmark = "Buy & Hold VOO"    # every strategy is compared with this one
+
+# Trading starts after this many trading days so that every strategy has the
+# history it needs (moving averages, momentum lookback) and all start together.
+warmup_days = 252
+
+[costs]
+commission_rate = 0.0005   # 0.05% of the traded value
+commission_min = 0.0       # minimum commission per trade
+slippage_rate = 0.0005     # fills are 0.05% worse than the close
+
+[[strategies]]
+name = "Buy & Hold VOO"
+type = "buy_and_hold"
+weights = { VOO = 1.0 }
+
+[[strategies]]
+name = "60/40 annual rebalance"
+type = "periodic_rebalance"
+weights = { VOO = 0.6, BND = 0.4 }
+frequency = "annual"
+
+[[strategies]]
+name = "VOO 200-day trend"
+type = "moving_average"
+asset = "VOO"
+risk_off = "BIL"
+window = 200
+frequency = "monthly"
+
+[[strategies]]
+name = "Momentum top 1"
+type = "momentum"
+assets = ["VOO", "VT", "EWJ", "BND"]
+risk_off = "BIL"
+lookback_days = 252
+top_n = 1
+frequency = "monthly"

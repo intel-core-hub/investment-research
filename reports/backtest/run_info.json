@@ -1,0 +1,65 @@
+{
+  "prices_file": "data\\processed\\prices.csv",
+  "prices_sha256": "4d15f2f6e0466cb14a0fe49dd0fc59810ffd9dfa3d9d9903a00b2b97dfbc8722",
+  "config_file": "config\\backtest.toml",
+  "config_sha256": "799c007cf52793f7f372fed13889bbb281ba706a524bc1c0b07d5621df8e16bb",
+  "git_commit": "652c41197cb5762ee31a91a13b9c4e7e54695a44",
+  "data_start": "2010-09-09",
+  "trading_start": "2011-09-08",
+  "end": "2026-09-21",
+  "python": "3.11.9",
+  "pandas": "3.0.6",
+  "numpy": "2.4.6",
+  "matplotlib": "3.11.2",
+  "config": {
+    "initial_cash": 10000,
+    "risk_free_ticker": "BIL",
+    "benchmark": "Buy & Hold VOO",
+    "warmup_days": 252,
+    "costs": {
+      "commission_rate": 0.0005,
+      "commission_min": 0.0,
+      "slippage_rate": 0.0005
+    },
+    "strategies": [
+      {
+        "name": "Buy & Hold VOO",
+        "type": "buy_and_hold",
+        "weights": {
+          "VOO": 1.0
+        }
+      },
+      {
+        "name": "60/40 annual rebalance",
+        "type": "periodic_rebalance",
+        "weights": {
+          "VOO": 0.6,
+          "BND": 0.4
+        },
+        "frequency": "annual"
+      },
+      {
+        "name": "VOO 200-day trend",
+        "type": "moving_average",
+        "asset": "VOO",
+        "risk_off": "BIL",
+        "window": 200,
+        "frequency": "monthly"
+      },
+      {
+        "name": "Momentum top 1",
+        "type": "momentum",
+        "assets": [
+          "VOO",
+          "VT",
+          "EWJ",
+          "BND"
+        ],
+        "risk_off": "BIL",
+        "lookback_days": 252,
+        "top_n": 1,
+        "frequency": "monthly"
+      }
+    ]
+  }
+}
