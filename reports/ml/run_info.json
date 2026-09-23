@@ -1,0 +1,25 @@
+{
+  "prices_sha256": "155b819f5681a3368fe38eb2e5b76e26744e82755135a565a77dc035047d0ea8",
+  "raw_target_sha256": "f615bd8bcbcf8efa338252db3ef061917b38ba497801f1dc20f4d4efcf40279d",
+  "ml_config_sha256": "09d070e9b2183e1f60ec91b5b62ae83c5e87e7f2ac18dc5900c9a856f077c001",
+  "backtest_config_sha256": "799c007cf52793f7f372fed13889bbb281ba706a524bc1c0b07d5621df8e16bb",
+  "statistics_config_sha256": "f51e5a9ba483b60ec59f437c5a15813713ebe938fb4662a91186dcf7423d9e12",
+  "git_commit": "2a8223a6416c2b3632cfbf45ec89cec42648ed45",
+  "git_dirty": false,
+  "python": "3.11.9",
+  "pandas": "3.0.6",
+  "numpy": "2.4.6",
+  "scikit_learn": "1.9.1",
+  "scipy": "1.17.1",
+  "matplotlib": "3.11.2",
+  "seed": 42,
+  "bootstrap": {
+    "resamples": 2000,
+    "seed": 20260923,
+    "block_size": 21
+  },
+  "features_available_from": "2011-09-08",
+  "last_date": "2026-09-21",
+  "hyperparameter_candidates": 22,
+  "selected_models": 6
+}

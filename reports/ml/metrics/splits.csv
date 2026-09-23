@@ -1,0 +1,4 @@
+segment,start,end,rows,evaluated_rows,rows_without_usable_label,positive_rate,model_fitted_on,fit_rows
+train,2011-09-08,2019-12-31,2092,2072,20,0.6959459459,train,2072
+validation,2020-01-02,2022-12-30,756,736,20,0.6480978261,train,2072
+test,2023-01-03,2026-09-21,932,912,20,0.7149122807,train+validation,2828
