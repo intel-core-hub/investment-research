@@ -1,42 +1,58 @@
-"""Load data/raw/voo.csv and run basic data quality checks."""
+"""Run data quality checks on every raw price file listed in config/assets.toml.
 
-from pathlib import Path
+Pass criteria (all must hold): no missing values, no duplicate dates,
+no non-positive prices, no rows with High < Low.
+Informational only: weekdays with no row (market holidays) and the largest
+absolute daily move, which helps spot adjustment glitches.
+"""
 
 import pandas as pd
 
-CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "raw" / "voo.csv"
+from prices import PRICE_COLUMNS, ROOT, load_assets, load_raw
+
+REPORT_PATH = ROOT / "reports" / "comparison" / "data_quality.csv"
 
 
-def load_voo(path: Path = CSV_PATH) -> pd.DataFrame:
-    df = pd.read_csv(path, skiprows=[1, 2], index_col=0, parse_dates=True)
-    df.index.name = "Date"
-    return df
+def check_quality(df: pd.DataFrame) -> dict:
+    daily_move = df["Close"].pct_change().abs()
+    result = {
+        "rows": len(df),
+        "start": df.index.min().date(),
+        "end": df.index.max().date(),
+        "missing_values": int(df.isna().sum().sum()),
+        "duplicate_dates": int(df.index.duplicated().sum()),
+        "non_positive_prices": int((df[PRICE_COLUMNS] <= 0).sum().sum()),
+        "high_below_low": int((df["High"] < df["Low"]).sum()),
+        "missing_weekdays": len(pd.bdate_range(df.index.min(), df.index.max()).difference(df.index)),
+        "max_abs_daily_move": round(daily_move.max(), 4),
+        "max_abs_daily_move_date": daily_move.idxmax().date(),
+    }
+    result["passed"] = (
+        result["missing_values"] == 0
+        and result["duplicate_dates"] == 0
+        and result["non_positive_prices"] == 0
+        and result["high_below_low"] == 0
+    )
+    return result
 
 
-def check_quality(df: pd.DataFrame) -> None:
-    print(f"rows: {len(df)}")
-    print(f"date range: {df.index.min().date()} to {df.index.max().date()}")
+def main() -> None:
+    results = pd.DataFrame(
+        {asset["ticker"]: check_quality(load_raw(asset["ticker"])) for asset in load_assets()}
+    ).T
+    results.index.name = "ticker"
 
-    missing = df.isna().sum()
-    print("\nmissing values per column:")
-    print(missing[missing > 0] if missing.any() else "  none")
+    with pd.option_context("display.width", 200, "display.max_columns", None):
+        print(results)
 
-    dup_dates = df.index.duplicated().sum()
-    print(f"\nduplicate dates: {dup_dates}")
+    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    results.to_csv(REPORT_PATH)
+    print(f"\nsaved to {REPORT_PATH}")
 
-    price_cols = [c for c in ["Open", "High", "Low", "Close"] if c in df.columns]
-    non_positive = (df[price_cols] <= 0).sum()
-    print("\nnon-positive prices per column:")
-    print(non_positive[non_positive > 0] if non_positive.any() else "  none")
-
-    bad_hl = (df["High"] < df["Low"]).sum() if {"High", "Low"}.issubset(df.columns) else 0
-    print(f"\nrows where High < Low: {bad_hl}")
-
-    business_days = pd.bdate_range(df.index.min(), df.index.max())
-    missing_business_days = business_days.difference(df.index)
-    print(f"\nmissing business days in range: {len(missing_business_days)}")
+    failed = results.index[~results["passed"].astype(bool)].tolist()
+    if failed:
+        raise SystemExit(f"quality check failed for: {', '.join(failed)}")
 
 
 if __name__ == "__main__":
-    voo = load_voo()
-    check_quality(voo)
+    main()

@@ -3,8 +3,9 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+
+import metrics as m
 
 ROOT = Path(__file__).resolve().parents[2]
 CSV_PATH = ROOT / "data" / "raw" / "voo.csv"
@@ -13,7 +14,6 @@ FIGURE_PATH = REPORTS_DIR / "figures" / "voo_analysis.png"
 YEARLY_FIGURE_PATH = REPORTS_DIR / "figures" / "voo_yearly_returns.png"
 YEARLY_CSV_PATH = REPORTS_DIR / "voo_yearly_returns.csv"
 MONTHLY_CSV_PATH = REPORTS_DIR / "voo_monthly_returns.csv"
-TRADING_DAYS = 252
 
 
 def load_close(path: Path = CSV_PATH) -> pd.Series:
@@ -23,27 +23,20 @@ def load_close(path: Path = CSV_PATH) -> pd.Series:
 
 
 def compute_metrics(close: pd.Series) -> dict:
-    daily_returns = close.pct_change().dropna()
-    cumulative = close / close.iloc[0] - 1
-    years = (close.index[-1] - close.index[0]).days / 365.25
-    drawdown = close / close.cummax() - 1
+    drawdown = m.drawdowns(close)
     return {
-        "cumulative_return": cumulative.iloc[-1],
-        "annual_return": (1 + cumulative.iloc[-1]) ** (1 / years) - 1,
-        "annual_volatility": daily_returns.std() * np.sqrt(TRADING_DAYS),
+        "cumulative_return": m.total_return(close),
+        "annual_return": m.cagr(close),
+        "annual_volatility": m.annual_volatility(close),
         "max_drawdown": drawdown.min(),
         "max_drawdown_date": drawdown.idxmin(),
-        "cumulative_series": cumulative,
+        "cumulative_series": m.cumulative_returns(close),
         "drawdown_series": drawdown,
     }
 
 
 def period_returns(close: pd.Series, freq: str) -> pd.Series:
-    period_end = close.resample(freq).last()
-    returns = period_end.pct_change()
-    # the first period has no prior period end, so measure it from the first close
-    returns.iloc[0] = period_end.iloc[0] / close.iloc[0] - 1
-    return returns.rename("return")
+    return m.period_returns(close, freq).rename("return")
 
 
 def save_period_returns(yearly: pd.Series, monthly: pd.Series) -> None:

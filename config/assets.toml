@@ -1,0 +1,36 @@
+# Assets compared in Phase 2.
+# All are USD-listed ETFs so currency, trading calendar and dividend adjustment
+# are identical across assets. Results are from a USD investor's point of view.
+
+[analysis]
+rolling_window_days = 252
+
+[[assets]]
+ticker = "VOO"
+name = "Vanguard S&P 500 ETF"
+category = "US large cap equity"
+
+[[assets]]
+ticker = "VTI"
+name = "Vanguard Total Stock Market ETF"
+category = "US total market equity"
+
+[[assets]]
+ticker = "VT"
+name = "Vanguard Total World Stock ETF"
+category = "Global equity"
+
+[[assets]]
+ticker = "EWJ"
+name = "iShares MSCI Japan ETF"
+category = "Japan equity (USD)"
+
+[[assets]]
+ticker = "BND"
+name = "Vanguard Total Bond Market ETF"
+category = "US investment grade bonds"
+
+[[assets]]
+ticker = "BIL"
+name = "SPDR Bloomberg 1-3 Month T-Bill ETF"
+category = "Cash proxy (T-bills)"

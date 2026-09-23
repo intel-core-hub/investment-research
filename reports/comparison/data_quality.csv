@@ -1,0 +1,7 @@
+ticker,rows,start,end,missing_values,duplicate_dates,non_positive_prices,high_below_low,missing_weekdays,max_abs_daily_move,max_abs_daily_move_date,passed
+VOO,4032,2010-09-09,2026-09-21,0,0,0,0,151,0.1174,2020-03-16,True
+VTI,6353,2001-06-15,2026-09-21,0,0,0,0,239,0.1283,2008-10-13,True
+VT,4587,2008-06-26,2026-09-21,0,0,0,0,171,0.1345,2008-10-13,True
+EWJ,7677,1996-03-18,2026-09-21,0,0,0,0,284,0.1582,2008-10-13,True
+BND,4894,2007-04-10,2026-09-21,0,0,0,0,181,0.0544,2020-03-12,True
+BIL,4859,2007-05-30,2026-09-21,0,0,0,0,180,0.0044,2008-09-17,True

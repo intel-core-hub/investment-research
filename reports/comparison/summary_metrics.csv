@@ -1,0 +1,7 @@
+ticker,name,category,start,end,total_return,cagr,annual_volatility,max_drawdown,max_drawdown_date,rolling_return_252d_min,rolling_return_252d_median,rolling_return_252d_max,rolling_return_252d_share_positive,rolling_volatility_252d_min,rolling_volatility_252d_median,rolling_volatility_252d_max
+VOO,Vanguard S&P 500 ETF,US large cap equity,2010-09-09,2026-09-21,8.340202,0.149537,0.169698,-0.33993,2020-03-23,-0.197293,0.160441,0.783434,0.889947,0.066456,0.145233,0.346507
+VTI,Vanguard Total Stock Market ETF,US total market equity,2010-09-09,2026-09-21,7.927146,0.146299,0.172935,-0.350003,2020-03-23,-0.213633,0.156462,0.855524,0.873016,0.069521,0.147419,0.345334
+VT,Vanguard Total World Stock ETF,Global equity,2010-09-09,2026-09-21,4.387523,0.110755,0.170607,-0.342362,2020-03-23,-0.231797,0.131549,0.798727,0.767196,0.068543,0.143768,0.32878
+EWJ,iShares MSCI Japan ETF,Japan equity (USD),2010-09-09,2026-09-21,2.369017,0.078702,0.18045,-0.331441,2022-10-20,-0.312089,0.085594,0.628115,0.692857,0.078477,0.174603,0.257788
+BND,Vanguard Total Bond Market ETF,US investment grade bonds,2010-09-09,2026-09-21,0.395911,0.021022,0.048454,-0.185821,2022-10-20,-0.168432,0.025735,0.130677,0.725661,0.024643,0.035895,0.094662
+BIL,SPDR Bloomberg 1-3 Month T-Bill ETF,Cash proxy (T-bills),2010-09-09,2026-09-21,0.250535,0.014042,0.002639,-0.004316,2015-12-09,-0.00153,0.003327,0.054391,0.597619,0.001298,0.002428,0.003251
