@@ -1,0 +1,7 @@
+# Streamlit settings for the Phase 8 dashboard (streamlit run app.py).
+
+[browser]
+gatherUsageStats = false   # do not send usage statistics
+
+[server]
+headless = true            # no first-run prompt; open http://localhost:8501 yourself

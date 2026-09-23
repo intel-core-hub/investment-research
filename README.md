@@ -24,6 +24,7 @@ python src/portfolio/run_portfolios.py # Phase 4 ポートフォリオ比較 →
 python src/backtest/run_backtest.py   # Phase 5 戦略のバックテスト → reports/backtest/
 python src/statistics/run_statistics.py # Phase 6 統計的評価 → reports/statistics/
 python src/ml/run_ml.py               # Phase 7 機械学習の検証 → reports/ml/(数分かかる)
+streamlit run app.py                  # Phase 8 ダッシュボード → ブラウザで http://localhost:8501
 python -m pytest                      # テスト
 ```
 
@@ -32,6 +33,8 @@ VOO だけ取り直すときは `python src/data/fetch_voo.py`。
 ## ディレクトリ構成
 
 ```
+app.py                       Phase 8 ダッシュボードの入口(共通サイドバーとページの切り替え)
+.streamlit/config.toml       Streamlit の設定(利用統計を送らない)
 config/
 ├─ assets.toml               比較する資産とローリング期間の設定
 ├─ simulation.toml           積立額・比較する投資期間・暴落の判定基準
@@ -69,12 +72,19 @@ src/
 │  ├─ inference.py           信頼区間・Sharpe の標準誤差・ブートストラップ・多重検定の補正
 │  ├─ trades.py              売買単位(往復)の損益集計
 │  └─ run_statistics.py      全戦略の統計評価、CSV・グラフ・再現情報の出力
-└─ ml/
-   ├─ features.py            特徴量・予測対象(ラベル)・ラベル確定日・期間の区切り
-   ├─ models.py              モデルのパイプライン(標準化→選択→分類器)とベースライン
-   ├─ evaluation.py          予測性能の指標とキャリブレーション
-   ├─ signals.py             予測を Phase 5 の戦略(月初判断・翌日約定)に変換
-   └─ run_ml.py              探索・学習・予測・バックテスト・統計検証・walk-forward・実験記録
+├─ ml/
+│  ├─ features.py            特徴量・予測対象(ラベル)・ラベル確定日・期間の区切り
+│  ├─ models.py              モデルのパイプライン(標準化→選択→分類器)とベースライン
+│  ├─ evaluation.py          予測性能の指標とキャリブレーション
+│  ├─ signals.py             予測を Phase 5 の戦略(月初判断・翌日約定)に変換
+│  └─ run_ml.py              探索・学習・予測・バックテスト・統計検証・walk-forward・実験記録
+└─ dashboard/
+   ├─ compute.py             Phase 2〜6 の計算の呼び出し(Streamlit に依存しない)
+   ├─ ml_compute.py          Phase 7 の計算の呼び出し(Streamlit に依存しない)
+   ├─ charts.py              Plotly のグラフ(色は資産・戦略ごとに固定)
+   ├─ common.py              キャッシュ・共通設定・ページ切り替えで消えない入力・表の書式
+   ├─ sidebar.py             共通サイドバー(資産・期間・分析モード)
+   └─ tab_*.py               ① Overview 〜 ⑥ Machine Learning の各ページ
 tests/                       自動テスト(pytest)
 data/
 ├─ raw/<ticker>.csv          資産ごとの取得データ
@@ -146,6 +156,70 @@ reports/
 | Sharpe ratio | 超過リターン(日次リターン − BIL の日次リターン)の平均 × 252 ÷ (その標準偏差 × √252) |
 
 N は `config/assets.toml` の `rolling_window_days`(初期値 252)。
+
+---
+
+## Phase 8:Streamlit 分析ダッシュボード
+
+Phase 1〜7 の分析を、コードを編集せずにブラウザで条件を変えて確認できるようにした。計算はすべて既存のモジュール(`metrics`・`portfolio`・`engine`・`strategies`・`performance`・`inference`・`trades`・`run_ml`)を呼び出しており、ダッシュボード用に指標を定義し直していない。そのため、同じ条件ならレポートと同じ数値になる(テストで確認)。
+
+### 起動
+
+```
+pip install -r requirements.txt   # streamlit と plotly を追加
+streamlit run app.py              # ブラウザで http://localhost:8501 を開く
+```
+
+データは `data/processed/prices.csv` を読むだけで、ダッシュボードからは取得しない。データを更新するときは、先に `fetch_prices.py` と `build_dataset.py` を実行する。
+
+### 画面構成
+
+| ページ | できること | 使う計算 |
+|---|---|---|
+| 共通サイドバー | 資産(複数選択)、期間(日付の範囲か「直近 N 年」)、分析モード(「詳細」でグラフの元データの表と CSV を表示) | − |
+| ① Overview | 資産ごとの累積リターン・CAGR・年率ボラティリティ・最大DD・Sharpe・Sortino・Calmar のカード、累積リターン(線形/対数)、ドローダウン | Phase 6 `performance.summary`、Phase 2 `metrics` |
+| ② Asset Analysis | 累積リターン、ローリング・リターンとボラティリティ(63/126/252 日)、ドローダウン、年別リターン、相関行列(日次/月次) | Phase 2 `metrics` |
+| ③ Portfolio | プリセット(`portfolios.toml`)か比率のスライダー(合計 100% を確認、ボタンで 100% に調整)、リバランス(なし/年/四半期/月)、一括投資か毎月積立、単一資産のベンチマークとの比較、配分の推移、分散効果 | Phase 4 `portfolio` |
+| ④ Backtest | 4 戦略の選択、初期資金・手数料・スリッページ・戦略のパラメータ(移動平均の日数、モメンタムの期間と資産数)、指標(勝率・Profit Factor を含む)、資産曲線とドローダウン、約定ログと往復の売買(CSV ダウンロード) | Phase 5 `engine`・`strategies`、Phase 6 `trades` |
+| ⑤ Statistics | 戦略と資産から系列とベンチマークを選び、Sharpe の標準誤差(Lo・Mertens)と信頼区間、PSR、ブートストラップ(1日単位・ブロック、回数 1,000〜10,000、ブロック長を変更可)による差の検定と Holm 補正、平均リターンの区間(通常・Newey-West)、VaR/CVaR・歪度・尖度、リターン分布 | Phase 6 `inference`・`performance` |
+| ⑥ Machine Learning | モデル(Logistic Regression・Random Forest・HistGradientBoosting)、特徴量セット、評価方法(テスト期間/walk-forward)、ハイパーパラメータの候補、しきい値を選ぶと、期間分割、予測性能(区間別とベースライン)、permutation importance、予測 → バックテスト → 統計検証までを1画面で表示 | Phase 7 `run_ml`、Phase 5・6 |
+
+④ で設定した初期資金・コスト・パラメータは ⑤ と ⑥ でも使う。ページを切り替えても入力は保持される。
+
+### 研究の規律を画面でも守るための工夫
+
+- **⑥ のテスト期間はのぞき見しにくくした:** ハイパーパラメータは検証期間の ROC-AUC で選ばれた値が初期値で、別の値を選ぶと警告を出す。しきい値を Phase 7 の 0.5 から変えた場合も警告を出す。
+- **walk-forward は既定のハイパーパラメータに固定:** 2020〜2022 年の検証期間で選んだ値を使うと、それより前の年の予測に将来の情報が入るため。
+- **⑥ の Holm 補正は画面に出した3件の比較が対象:** Phase 7 のレポートは 10 件をまとめて補正したので、補正後の p 値はレポートより小さくなることがある(補正前の p 値と区間は同じ)。
+- **戦略の取引開始日:** 期間の開始日が早すぎる場合は、Phase 5 と同じく 252 取引日の履歴がそろう日から取引を始め、その日を画面に表示する。
+- **入力の確認:** 資産が未選択、期間が短すぎる、比率の合計が 100% でない、共通の日付が 30 日未満、などの場合は計算せずに理由を表示する。
+
+### 技術的な構成
+
+- **ページ:** `st.navigation` で6ページを切り替える。開いているページだけが実行されるので、ML の計算は ⑥ を開いた時だけ行う。
+- **キャッシュ:** 価格データ、バックテスト、ブートストラップ、ML の学習と予測は `st.cache_data` / `st.cache_resource` でキャッシュする。同じ条件で2回目以降は計算しない。
+- **状態:** サイドバーの設定は `st.session_state` で全ページに共有する。Streamlit は表示していないページの入力値を消すため、各ページの入力値も `st.session_state` に写して復元する(`common.persistent`)。
+- **グラフ:** Plotly(ホバー・ズーム・凡例の表示切り替え)。色は資産・戦略・モデルごとに固定で、Phase 2〜7 のレポートの図と同じ。
+- **計算とUIの分離:** `compute.py` と `ml_compute.py` は Streamlit に依存しないので、pytest で直接テストできる。
+
+### 依頼内容との違い
+
+- **ディレクトリ:** `modules/` に既存コードを移す案ではなく、既存の `src/` のモジュールをそのまま呼び出した。Phase 1〜7 のコード・テスト・レポートの再現性を壊さないため。
+- **LightGBM は使っていない:** Phase 7 で検証した scikit-learn の HistGradientBoosting(LightGBM と同じヒストグラム型の勾配ブースティング)を使う。依存を増やさず、Phase 7 の結果と比べられるようにするため。
+- **ブートストラップ回数:** 初期値は Phase 6 と同じ 2,000 回。画面で 10,000 回まで選べる(時間がかかる)。
+
+### Phase 1〜7 との整合性(テストで確認)
+
+- ③ の US 60/40・Conservative(リバランスなし・年1回、一括・積立)の CAGR・ボラティリティ・最大DD・Sharpe・最終資産が `reports/portfolio/portfolio_summary.csv` と一致
+- ④ の初期設定の4戦略の最終資産・Sharpe・約定回数が `reports/backtest/backtest_summary.csv` と、トレンド戦略の勝率が `reports/statistics/trade_statistics.csv` と一致
+- ⑥ の logistic_regression / base の選ばれたハイパーパラメータ、各区間の ROC-AUC と正解率、テスト期間の CAGR・Sharpe、walk-forward の年別 ROC-AUC が `reports/ml/` と一致
+- 6ページすべてがエラーなく表示されること、サイドバーの入力の確認、比率の合計の確認、詳細モードを `streamlit.testing` で確認(ダッシュボードのテスト 25 件、全体 160 件)
+
+### 注意
+
+- 金額は正規化した値(USD 建て)で、実際の資産額ではない。税金と為替は含まない。
+- ⑥ は初回に scikit-learn の読み込みと学習で数十秒かかる。2回目以降はキャッシュを使う。
+- 画面で条件を変えて良い結果を探すこと自体が、データののぞき見(多重検定)になる。画面は理解と確認のために使い、結論は Phase 5〜7 の決めた手順で出す。
 
 ---
 

@@ -3,4 +3,6 @@ numpy
 yfinance
 matplotlib
 scikit-learn
+streamlit
+plotly
 pytest
