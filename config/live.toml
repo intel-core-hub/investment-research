@@ -1,0 +1,53 @@
+# Phase 9 live bridge settings (public defaults).
+#
+# This file holds no personal data: amounts here are limits and assumptions.
+# Put your own values (strategy actually used, account type, limits) in
+# config/live.local.toml. That file is git-ignored and overrides this one key by key.
+# Real transactions, holdings and decisions are stored under data_dir, which is
+# also git-ignored.
+
+data_dir = "data/live"
+
+[signal]
+# A strategy name from config/backtest.toml, or "ml" for the Phase 7 model below.
+# The default is the research benchmark; choosing the strategy is your decision.
+strategy = "Buy & Hold VOO"
+mode = "buy_only"            # buy_only: invest available cash toward the target, never sell
+                             # rebalance: buy and sell to reach the target weights
+fractional_shares = false    # most Japanese brokers trade US ETFs in whole shares only
+
+[ml]                         # used when signal.strategy = "ml"
+model = "logistic_regression"
+feature_set = "base"
+hyperparameters = { C = 0.01 }   # chosen on the Phase 7 validation period
+threshold = 0.5
+
+[account]
+type = "nisa"                # "nisa" (tax-free in Japan) or "tokutei" (taxable)
+
+[costs]
+commission_rate = 0.0        # share of the traded value; many brokers charge 0 for US ETFs (check yours)
+commission_min_jpy = 0
+fx_spread_jpy = 0.25         # yen per USD added to (buy) or taken from (sell) the mid rate
+slippage_rate = 0.0005       # paper trading fill vs close, same as Phase 5
+
+[taxes]
+capital_gains_rate = 0.20315 # income tax + reconstruction tax + resident tax (taxable account)
+dividend_rate_jp = 0.20315   # Japanese tax on foreign dividends after US withholding (taxable account)
+us_withholding_rate = 0.10   # US tax withheld on ETF dividends (also in NISA)
+
+[expense_ratios]             # annual; already deducted from ETF prices, so only reported
+VOO = 0.0003
+VTI = 0.0003
+VT = 0.0006
+EWJ = 0.0050
+BND = 0.0003
+BIL = 0.0014
+
+[limits]                     # the risk controller stops when any limit is exceeded
+max_orders_per_day = 3
+max_order_jpy = 150000       # per order, estimated with the latest close and FX rate. With whole shares
+                             # it must exceed one share (VOO: about 112,000 JPY on 2026-09-21),
+                             # otherwise every order for that asset stops
+max_weight = 1.0             # largest weight of one asset after the trades
+max_data_age_days = 3        # business days between the last price and today

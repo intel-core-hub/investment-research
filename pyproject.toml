@@ -1,4 +1,4 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src/simulation", "src/analysis", "src/portfolio", "src/backtest", "src/statistics", "src/ml",
-              "src/dashboard"]
+              "src/dashboard", "src/live"]

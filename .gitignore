@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .claude/
+
+# Phase 9: real money data and personal settings are never committed
+data/live/
+config/live.local.toml
