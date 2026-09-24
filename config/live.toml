@@ -44,6 +44,11 @@ EWJ = 0.0050
 BND = 0.0003
 BIL = 0.0014
 
+[backup]                     # python src/live/run_live.py backup
+dir = ""                     # empty = ~/investment-research-backups. Set a private folder outside this
+                             # repository in live.local.toml (e.g. a personal OneDrive folder)
+include_market = false       # market data can be downloaded again
+
 [limits]                     # the risk controller stops when any limit is exceeded
 max_orders_per_day = 3
 max_order_jpy = 150000       # per order, estimated with the latest close and FX rate. With whole shares

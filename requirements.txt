@@ -1,8 +1,12 @@
-pandas
-numpy
-yfinance
-matplotlib
-scikit-learn
-streamlit
-plotly
-pytest
+# Python 3.11. Versions are pinned so that a new install reproduces the reports
+# (the run_info.json files record the same versions). Upgrade on purpose, then
+# re-run the reports and the tests.
+pandas==3.0.6
+numpy==2.4.6
+yfinance==1.7.0
+matplotlib==3.11.2
+scikit-learn==1.9.1
+scipy==1.17.1
+streamlit==1.64.0
+plotly==7.1.0
+pytest==9.1.1

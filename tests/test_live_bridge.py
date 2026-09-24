@@ -1,5 +1,6 @@
 """Phase 9 tests. Synthetic data and temporary folders only: nothing reads or writes data/live/."""
 import subprocess
+import zipfile
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 import attribution as at
 import audit
+import backup
 import bridge
 import demo
 import execution_analyzer as ea
@@ -461,3 +463,43 @@ def test_approval_page_blocks_approval_during_emergency_stop():
     assert any("緊急停止中" in e.value for e in app.error)
     approve = [b for b in app.button if b.label.startswith("承認")]
     assert approve and all(b.disabled for b in approve)
+
+
+# --- backups of the git-ignored data ------------------------------------------------------------------
+
+def test_backup_is_complete_verified_and_outside_the_repository(tmp_path):
+    store = LiveStore(tmp_path / "live").ensure()
+    rl.append_transactions(store.transactions, [deposit("2025-01-06", 10_000)])
+    rc.set_emergency_stop(store, "test")
+    store.market_prices.write_text("Date,VOO\n", encoding="utf-8")
+    local = tmp_path / "live.local.toml"
+    local.write_text("[limits]\nmax_order_jpy = 1\n", encoding="utf-8")
+
+    path = backup.create_backup(store, tmp_path / "backups", local_config=local)
+    manifest = backup.verify(path)
+    assert set(manifest["files"]) == {"data/live/transactions.csv", "data/live/EMERGENCY_STOP",
+                                      "config/live.local.toml"}          # market data only on request
+    with zipfile.ZipFile(path) as z:
+        assert z.read("data/live/transactions.csv") == store.transactions.read_bytes()
+    with_market = backup.create_backup(store, tmp_path / "backups", local_config=local, include_market=True,
+                                       now=pd.Timestamp("2030-01-01").to_pydatetime())
+    assert "data/live/market/close.csv" in backup.verify(with_market)["files"]
+    assert backup.list_backups(tmp_path / "backups") == sorted([path, with_market])
+
+    with pytest.raises(backup.BackupError, match="inside the repository"):
+        backup.create_backup(store, ROOT / "backups", local_config=local)
+    with pytest.raises(backup.BackupError, match="nothing to back up"):
+        backup.create_backup(LiveStore(tmp_path / "empty"), tmp_path / "backups", local_config=local)
+
+
+def test_backup_detects_a_damaged_file(tmp_path):
+    store = LiveStore(tmp_path / "live").ensure()
+    rl.append_transactions(store.transactions, [deposit("2025-01-06", 10_000)])
+    path = backup.create_backup(store, tmp_path / "backups", local_config=None)
+    damaged = tmp_path / "damaged.zip"
+    with zipfile.ZipFile(path) as src, zipfile.ZipFile(damaged, "w") as dst:
+        for name in src.namelist():
+            data = src.read(name)
+            dst.writestr(name, data.replace(b"10000", b"99999") if name.endswith(".csv") else data)
+    with pytest.raises(backup.BackupError, match="checksum"):
+        backup.verify(damaged)

@@ -6,6 +6,7 @@
     python src/live/run_live.py status           data dates, pending decisions, open orders, errors
     python src/live/run_live.py stop "reason"    emergency stop: every proposal stops and nothing can be approved
     python src/live/run_live.py resume           lift the emergency stop
+    python src/live/run_live.py backup           zip data/live/ and live.local.toml to backup.dir (checked)
 
 No command sends an order to a broker.
 """
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd  # noqa: E402
 
+import backup  # noqa: E402
 import bridge  # noqa: E402
 import fx_and_taxes as fxt  # noqa: E402
 import market as mk  # noqa: E402
@@ -35,7 +37,7 @@ def need_market(store):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["fetch", "propose", "recalc", "status", "stop", "resume"])
+    parser.add_argument("command", choices=["fetch", "propose", "recalc", "status", "stop", "resume", "backup"])
     parser.add_argument("reason", nargs="?", default="manual stop")
     args = parser.parse_args()
 
@@ -77,6 +79,15 @@ def main() -> None:
     elif args.command == "resume":
         rc.clear_emergency_stop(store)
         print("emergency stop lifted")
+    elif args.command == "backup":
+        destination = backup.backup_dir(settings)
+        try:
+            path = backup.create_backup(store, destination, include_market=settings["backup"]["include_market"])
+        except backup.BackupError as e:
+            sys.exit(f"backup not written: {e}")
+        files = len(backup.verify(path)["files"])
+        print(f"saved and verified {files} files: {path}")
+        print(f"{len(backup.list_backups(destination))} backups in {destination} (old ones are never deleted)")
 
 
 if __name__ == "__main__":
